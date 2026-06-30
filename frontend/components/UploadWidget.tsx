@@ -1,5 +1,5 @@
 "use client"
-import { useState } from "react"
+import { useState, useRef } from "react"
 import axios from "axios"
 import { useRouter } from "next/navigation"
 
@@ -10,11 +10,14 @@ export default function UploadWidget() {
   const [reportType, setReportType] = useState<ReportType>("employee")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
 
   async function handleUpload() {
+    console.log("handleUpload called, file:", file)
     if (!file) return
     setLoading(true)
+    console.log("Posting to backend...")
     setError(null)
     try {
       const formData = new FormData()
@@ -27,11 +30,19 @@ export default function UploadWidget() {
           : "http://localhost:8000/api/upload/equipment"
 
       const res = await axios.post(endpoint, formData)
-      localStorage.setItem("chartData", JSON.stringify(res.data))
+      const { session_id } = res.data
+      if (!session_id) {
+        setError("No session ID returned from server")
+        return
+      }
+      localStorage.setItem("session_id", session_id)
       localStorage.setItem("reportType", reportType)
-      router.push("/dashboard")
-    } catch (err) {
-      setError("Upload failed. Make sure the backend is running.")
+      console.log("Redirecting with session:", session_id)
+      window.location.href = "/dashboard"
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.message || "Unknown error"
+      setError(`Upload failed: ${msg}`)
+      console.error("Upload error:", err)
     } finally {
       setLoading(false)
     }
@@ -46,6 +57,7 @@ export default function UploadWidget() {
         <p className="text-sm font-medium text-gray-600 mb-2">Report Type</p>
         <div className="flex gap-3">
           <button
+            type="button"
             onClick={() => setReportType("employee")}
             className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-colors ${
               reportType === "employee"
@@ -56,6 +68,7 @@ export default function UploadWidget() {
             Employee
           </button>
           <button
+            type="button"
             onClick={() => setReportType("equipment")}
             className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-colors ${
               reportType === "equipment"
@@ -73,50 +86,44 @@ export default function UploadWidget() {
 
       {/* File Drop Zone */}
       <div
-        className={`border-2 border-dashed rounded-xl p-6 text-center mb-6 transition-colors ${
-          file ? "border-blue-400 bg-blue-50" : "border-gray-300 hover:border-blue-300"
+        onClick={() => fileInputRef.current?.click()}
+        className={`border-2 border-dashed rounded-xl p-6 text-center mb-6 cursor-pointer transition-colors ${
+          file ? "border-blue-400 bg-blue-50" : "border-gray-300 hover:border-blue-300 hover:bg-gray-50"
         }`}
       >
         <input
+          ref={fileInputRef}
           type="file"
           accept=".txt"
-          onChange={e => setFile(e.target.files?.[0] || null)}
           className="hidden"
-          id="file-input"
+          onChange={e => {
+            const selected = e.target.files?.[0] || null
+            setFile(selected)
+            console.log("File selected:", selected?.name)
+          }}
         />
-        <label htmlFor="file-input" className="cursor-pointer">
-          {file ? (
-            <div>
-              <p className="text-blue-600 font-medium">{file.name}</p>
-              <p className="text-sm text-gray-500 mt-1">
-                {(file.size / 1024).toFixed(1)} KB — click to change
-              </p>
-            </div>
-          ) : (
-            <div>
-              <p className="text-gray-500">Click to select a <span className="font-medium">.txt</span> file</p>
-              <p className="text-xs text-gray-400 mt-1">AS400 fixed-width format</p>
-            </div>
-          )}
-        </label>
+        {file ? (
+          <div>
+            <p className="text-blue-600 font-medium">{file.name}</p>
+            <p className="text-sm text-gray-500 mt-1">{(file.size / 1024).toFixed(1)} KB — click to change</p>
+          </div>
+        ) : (
+          <div>
+            <p className="text-gray-500">Click to select a <span className="font-medium">.txt</span> file</p>
+            <p className="text-xs text-gray-400 mt-1">AS400 fixed-width format</p>
+          </div>
+        )}
       </div>
 
-      {/* Error */}
-      {error && (
-        <p className="text-red-500 text-sm mb-4">{error}</p>
-      )}
+      {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
 
-      {/* Upload Button */}
       <button
+        type="button"
         onClick={handleUpload}
         disabled={!file || loading || reportType === "equipment"}
         className="w-full py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
-        {loading
-          ? "Uploading..."
-          : reportType === "equipment"
-          ? "Equipment Upload Coming Soon"
-          : "Upload & View Dashboard"}
+        {loading ? "Uploading..." : reportType === "equipment" ? "Equipment Upload Coming Soon" : "Upload & View Dashboard"}
       </button>
     </div>
   )

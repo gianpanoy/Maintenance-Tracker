@@ -1,9 +1,14 @@
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 import pandas as pd
 import io
+import uuid
+from typing import Optional
 
 router = APIRouter(prefix="/api", tags=["entries"])
+
+# In-memory session store
+sessions: dict = {}
 
 COLSPECS = [
     (0, 8), (8, 11), (12, 42), (42, 50), (50, 80),
@@ -22,9 +27,9 @@ NAMES = [
 ]
 
 @router.post("/upload")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(file: UploadFile = File(...), type: Optional[str] = Form(None)):
     contents = await file.read()
-    
+
     df = pd.read_fwf(
         io.BytesIO(contents),
         colspecs=COLSPECS,
@@ -32,7 +37,6 @@ async def upload_file(file: UploadFile = File(...)):
         dtype=str,
     )
 
-    # Clean up
     df = df.dropna(how="all")
     df["Hours, Regular"] = pd.to_numeric(df["Hours, Regular"], errors="coerce").fillna(0)
     df["Hours, Overtime"] = pd.to_numeric(df["Hours, Overtime"], errors="coerce").fillna(0)
@@ -40,34 +44,22 @@ async def upload_file(file: UploadFile = File(...)):
     df["Mile Marker, From"] = pd.to_numeric(df["Mile Marker, From"], errors="coerce")
     df["Mile Marker, To"] = pd.to_numeric(df["Mile Marker, To"], errors="coerce")
 
-    # Aggregations for charts
-    hours_by_employee = (
-        df.groupby("Employee Name")[["Hours, Regular", "Hours, Overtime"]]
-        .sum().reset_index()
-        .rename(columns={"Hours, Regular": "regular", "Hours, Overtime": "ot"})
-        .to_dict(orient="records")
-    )
+    slim = df[[
+        "Date", "Crew Code", "Employee ID", "Employee Name",
+        "Hours, Regular", "Hours, Overtime",
+        "Leave Description", "Leave Hours",
+        "Mile Marker, From", "Mile Marker, To",
+    ]].copy()
 
-    leave_breakdown = (
-        df[df["Leave Code"].notna()]
-        .groupby("Leave Description")["Leave Hours"]
-        .sum().reset_index()
-        .rename(columns={"Leave Description": "type", "Leave Hours": "hours"})
-        .to_dict(orient="records")
-    )
+    session_id = str(uuid.uuid4())
+    sessions[session_id] = slim.fillna("").to_dict(orient="records")
 
-    miles_by_employee = (
-        df.assign(miles=df["Mile Marker, To"] - df["Mile Marker, From"])
-        .groupby("Employee Name")["miles"]
-        .sum().reset_index()
-        .rename(columns={"miles": "total_miles"})
-        .dropna()
-        .to_dict(orient="records")
-    )
+    return JSONResponse({"session_id": session_id})
 
-    return JSONResponse({
-        "hours_by_employee": hours_by_employee,
-        "leave_breakdown": leave_breakdown,
-        "miles_by_employee": miles_by_employee,
-        "raw": df.fillna("").to_dict(orient="records"),
-    })
+
+@router.get("/session/{session_id}")
+def get_session(session_id: str):
+    data = sessions.get(session_id)
+    if not data:
+        return JSONResponse({"error": "Session not found"}, status_code=404)
+    return JSONResponse({"raw": data})
