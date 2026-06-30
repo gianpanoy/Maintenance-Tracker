@@ -10,9 +10,9 @@ export default function Navbar() {
 
   const navLinks = [
     { name: "Home", href: "/" },
-    { name: "Employees", href: "/employees" },
-    { name: "Equipment", href: "/account" },
-    { name: "Account", href: "/account" },
+    { name: "Employees", href: "/dashboard" },
+    { name: "Equipment", href: "/equipment" },
+    { name: "Account", href: "/Account" },
   ];
 
   return (
@@ -23,7 +23,7 @@ export default function Navbar() {
           {/* Logo Section */}
           <div className="flex-shrink-0">
             <Link href="/" className="text-xl font-bold tracking-wider">
-              MAINTENANCE DASHBOARD
+              HWY-K Maintenance Tracker
             </Link>
           </div>
 
