@@ -3,21 +3,12 @@ import { useEffect, useRef, useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import * as d3 from "d3"
 import axios from "axios"
+import { EmployeeDetail, EmpRow } from "@/components/EmployeeDetail"
 
 const COLORS = {
   regular: "#378ADD",
   ot: "#1D9E75",
   leave: ["#D85A30","#D4537E","#BA7517","#7F77DD","#639922","#E24B4A","#5DCAA5","#EF9F27"],
-}
-
-interface EmpRow {
-  name: string
-  crew: string
-  reg: number
-  ot: number
-  leaveHrs: number
-  leaveTypes: Set<string>
-  rawRows: any[]
 }
 
 function buildRows(data: any[]): EmpRow[] {
@@ -214,6 +205,7 @@ export default function Dashboard() {
   const [pieLegend, setPieLegend] = useState<{ label: string; value: number; color: string; pct: number }[]>([])
   const [leaveLegend, setLeaveLegend] = useState<{ label: string; value: number; color: string; pct: number }[]>([])
   const [barLegend, setBarLegend] = useState<{ key: string; color: string }[]>([])
+  const [selectedDetail, setSelectedDetail] = useState<EmpRow | null>(null)
 
   const pieRef = useRef<HTMLDivElement>(null)
   const leaveRef = useRef<HTMLDivElement>(null)
@@ -410,7 +402,11 @@ export default function Dashboard() {
                     <td className="py-2 px-3">
                       <input type="checkbox" checked={selectedEmps.has(r.name)} onChange={e => toggleEmp(r.name, e.target.checked)} className="cursor-pointer" aria-label={`Select ${r.name}`} />
                     </td>
-                    <td className="py-2 px-3" style={{ color: "#111827" }}>{r.name}</td>
+                    <td
+                      className="py-2 px-3 cursor-pointer hover:text-blue-600 hover:underline font-medium"
+                      style={{ color: "#111827" }}
+                      onClick={() => setSelectedDetail(r)}
+                    >{r.name}</td>
                     <td className="py-2 px-3" style={{ color: "#374151" }}>{r.crew}</td>
                     <td className="py-2 px-3" style={{ color: "#111827" }}>{r.reg.toFixed(1)}</td>
                     <td className="py-2 px-3" style={{ color: "#111827" }}>{r.ot.toFixed(1)}</td>
@@ -424,6 +420,7 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+      <EmployeeDetail emp={selectedDetail} onClose={() => setSelectedDetail(null)} />
     </div>
   )
 }
