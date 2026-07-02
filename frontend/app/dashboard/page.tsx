@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useRef, useState, useCallback } from "react"
+import { useEffect, useRef, useState, useMemo, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import * as d3 from "d3"
 import axios from "axios"
@@ -10,6 +10,9 @@ const COLORS = {
   ot: "#1D9E75",
   leave: ["#D85A30","#D4537E","#BA7517","#7F77DD","#639922","#E24B4A","#5DCAA5","#EF9F27"],
 }
+
+const PIE_COLORS = [COLORS.regular, COLORS.ot, COLORS.leave[0]]
+const NO_LEAVE_COLORS = ["#B4B2A9"]
 
 function buildRows(data: any[]): EmpRow[] {
   const map: Record<string, EmpRow> = {}
@@ -25,12 +28,19 @@ function buildRows(data: any[]): EmpRow[] {
   return Object.values(map)
 }
 
+type LegendItem = { label: string; value: number; color: string; pct: number }
+
+
 function useDoughnut(
   ref: React.RefObject<HTMLDivElement | null>,
   data: { label: string; value: number }[],
   colors: string[],
-  setLegend?: (items: { label: string; value: number; color: string; pct: number }[]) => void
+  onLegend: (items: LegendItem[]) => void
 ) {
+
+  const onLegendRef = useRef(onLegend)
+  useEffect(() => { onLegendRef.current = onLegend })
+
   useEffect(() => {
     if (!ref.current) return
     const el = ref.current
@@ -45,24 +55,21 @@ function useDoughnut(
     const total = d3.sum(data, d => d.value) || 1
     const pie = d3.pie<{ label: string; value: number }>().value(d => d.value).sort(null)
     const arc = d3.arc<d3.PieArcDatum<{ label: string; value: number }>>().innerRadius(r * 0.55).outerRadius(r)
-    const arcs = pie(data)
 
     g.selectAll("path")
-      .data(arcs)
+      .data(pie(data))
       .join("path")
       .attr("d", arc)
       .attr("fill", (_, i) => colors[i % colors.length])
       .attr("stroke", "#fff")
       .attr("stroke-width", 2)
 
-    if (setLegend) {
-      setLegend(data.map((d, i) => ({
-        label: d.label,
-        value: d.value,
-        color: colors[i % colors.length],
-        pct: Math.round(d.value / total * 100),
-      })))
-    }
+    onLegendRef.current(data.map((d, i) => ({
+      label: d.label,
+      value: d.value,
+      color: colors[i % colors.length],
+      pct: Math.round(d.value / total * 100),
+    })))
   }, [data, colors])
 }
 
@@ -70,24 +77,31 @@ function useVerticalBar(
   scrollRef: React.RefObject<HTMLDivElement | null>,
   rows: EmpRow[],
   selected: Set<string>,
-  setBarLegend: (items: { key: string; color: string }[]) => void
+  onLegend: (items: { key: string; color: string }[]) => void,
+  tab: "leave" | "ot" = "leave"
 ) {
+  const onLegendRef = useRef(onLegend)
+  useEffect(() => { onLegendRef.current = onLegend })
+
   useEffect(() => {
     if (!scrollRef.current) return
     const container = scrollRef.current
     container.innerHTML = ""
 
-    const active = rows
-      .filter(r => selected.has(r.name))
-      .sort((a, b) => b.reg - a.reg)
+    const active = rows.filter(r => selected.has(r.name)).sort((a, b) => b.reg - a.reg)
     if (!active.length) return
 
     const leaveTypes = [...new Set(active.flatMap(r => [...r.leaveTypes]))]
-    const keys = ["Regular", ...leaveTypes]
-    const colorMap: Record<string, string> = { Regular: COLORS.regular }
+    const keys = tab === "ot"
+      ? ["Regular", "OT"]
+      : ["Regular", ...leaveTypes]
+    const colorMap: Record<string, string> = { Regular: COLORS.regular, OT: COLORS.ot }
     leaveTypes.forEach((lt, i) => { colorMap[lt] = COLORS.leave[i % COLORS.leave.length] })
 
     const stackData = active.map(r => {
+      if (tab === "ot") {
+        return { name: r.name, Regular: r.reg, OT: r.ot }
+      }
       const lm: Record<string, number> = {}
       r.rawRows.forEach((d: any) => {
         const lt = (d["Leave Description"] || "").trim()
@@ -98,23 +112,17 @@ function useVerticalBar(
 
     const margin = { top: 16, right: 16, bottom: 72, left: 52 }
     const chartH = 300
-    const colW = 52          // px per employee column
+    const colW = 52
     const chartW = Math.max(active.length * colW, 400)
     const totalW = chartW + margin.left + margin.right
     const totalH = chartH + margin.top + margin.bottom
-
     const maxVal = d3.max(stackData, d => keys.reduce((s, k) => s + ((d as any)[k] || 0), 0)) || 1
 
-    // ── Y-axis overlay (fixed, not scrollable) ──────────────────────────
     const yAxisW = margin.left
     const yAxisSvg = d3.create("svg")
-      .attr("width", yAxisW)
-      .attr("height", totalH)
-      .style("flex-shrink", "0")
-      .style("position", "sticky")
-      .style("left", "0")
-      .style("z-index", "10")
-      .style("background", "#fff")
+      .attr("width", yAxisW).attr("height", totalH)
+      .style("flex-shrink", "0").style("position", "sticky")
+      .style("left", "0").style("z-index", "10").style("background", "#fff")
 
     const yScale = d3.scaleLinear().domain([0, maxVal]).nice().range([chartH, 0])
 
@@ -124,73 +132,49 @@ function useVerticalBar(
       .call(ax => ax.select(".domain").remove())
       .call(ax => ax.selectAll(".tick text").attr("font-size", 11).attr("fill", "#374151").attr("dx", -4))
 
-    // ── Scrollable bars SVG ─────────────────────────────────────────────
-    const barSvg = d3.create("svg")
-      .attr("width", totalW)
-      .attr("height", totalH)
-
+    const barSvg = d3.create("svg").attr("width", totalW).attr("height", totalH)
     const g = barSvg.append("g").attr("transform", `translate(${margin.left},${margin.top})`)
 
-    // Gridlines
     g.append("g")
       .call(d3.axisLeft(yScale).ticks(5).tickSize(-chartW))
       .call(ax => ax.select(".domain").remove())
       .call(ax => ax.selectAll("line").attr("stroke", "#e5e7eb"))
       .call(ax => ax.selectAll("text").remove())
 
-    const xScale = d3.scaleBand()
-      .domain(active.map(r => r.name))
-      .range([0, chartW])
-      .padding(0.3)
-
+    const xScale = d3.scaleBand().domain(active.map(r => r.name)).range([0, chartW]).padding(0.3)
     const stack = d3.stack<any>().keys(keys).value((d, k) => (d as any)[k] || 0)
-    const series = stack(stackData)
 
     g.selectAll("g.layer")
-      .data(series)
-      .join("g")
+      .data(stack(stackData)).join("g")
       .attr("class", "layer")
       .attr("fill", d => colorMap[d.key] || "#ccc")
-      .selectAll("rect")
-      .data(d => d)
-      .join("rect")
+      .selectAll("rect").data(d => d).join("rect")
       .attr("x", (_, i) => xScale(active[i].name)!)
       .attr("y", d => yScale(d[1]))
       .attr("height", d => yScale(d[0]) - yScale(d[1]))
       .attr("width", xScale.bandwidth())
       .attr("rx", 2)
 
-    // X-axis labels — rotated employee names
     g.append("g")
       .attr("transform", `translate(0,${chartH})`)
       .call(d3.axisBottom(xScale).tickSize(0))
       .call(ax => ax.select(".domain").remove())
       .call(ax => ax.selectAll(".tick text")
-        .attr("font-size", 10)
-        .attr("fill", "#111827")
-        .attr("text-anchor", "end")
-        .attr("transform", "rotate(-40)")
-        .attr("dy", "0.35em")
-        .attr("dx", "-0.5em"))
+        .attr("font-size", 10).attr("fill", "#111827")
+        .attr("text-anchor", "end").attr("transform", "rotate(-40)")
+        .attr("dy", "0.35em").attr("dx", "-0.5em"))
 
-    // ── Assemble layout ─────────────────────────────────────────────────
-    // Outer wrapper: flex row so Y-axis sticks to left
     const wrapper = document.createElement("div")
     wrapper.style.cssText = "display:flex;align-items:flex-start;width:100%;"
-
-    // Y-axis node
     wrapper.appendChild(yAxisSvg.node()!)
-
-    // Scrollable bar area
     const scrollArea = document.createElement("div")
     scrollArea.style.cssText = "overflow-x:auto;flex:1;"
     scrollArea.appendChild(barSvg.node()!)
     wrapper.appendChild(scrollArea)
-
     container.appendChild(wrapper)
 
-    setBarLegend(keys.map(k => ({ key: k, color: colorMap[k] || "#ccc" })))
-  }, [rows, selected])
+    onLegendRef.current(keys.map(k => ({ key: k, color: colorMap[k] || "#ccc" })))
+  }, [rows, selected, tab])
 }
 
 export default function Dashboard() {
@@ -202,10 +186,12 @@ export default function Dashboard() {
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
   const [crew, setCrew] = useState("")
-  const [pieLegend, setPieLegend] = useState<{ label: string; value: number; color: string; pct: number }[]>([])
-  const [leaveLegend, setLeaveLegend] = useState<{ label: string; value: number; color: string; pct: number }[]>([])
+  const [pieLegend, setPieLegend] = useState<LegendItem[]>([])
+  const [leaveLegend, setLeaveLegend] = useState<LegendItem[]>([])
   const [barLegend, setBarLegend] = useState<{ key: string; color: string }[]>([])
   const [selectedDetail, setSelectedDetail] = useState<EmpRow | null>(null)
+  const [pieTab, setPieTab] = useState<"leave" | "ot">("leave")
+  const [barTab, setBarTab] = useState<"leave" | "ot">("leave")
 
   const pieRef = useRef<HTMLDivElement>(null)
   const leaveRef = useRef<HTMLDivElement>(null)
@@ -216,24 +202,52 @@ export default function Dashboard() {
   const totalOT = active.reduce((s, r) => s + r.ot, 0)
   const totalLeave = active.reduce((s, r) => s + r.leaveHrs, 0)
 
-  const leaveMap: Record<string, number> = {}
-  active.forEach(r => {
-    r.rawRows.forEach((d: any) => {
-      const lt = (d["Leave Description"] || "").trim()
-      if (lt) leaveMap[lt] = (leaveMap[lt] || 0) + (Number(d["Leave Hours"]) || 0)
+  const leaveMap = useMemo(() => {
+    const map: Record<string, number> = {}
+    active.forEach(r => {
+      r.rawRows.forEach((d: any) => {
+        const lt = (d["Leave Description"] || "").trim()
+        if (lt) map[lt] = (map[lt] || 0) + (Number(d["Leave Hours"]) || 0)
+      })
     })
-  })
+    return map
+  }, [selectedEmps, allRows])
 
-  const pieData = [
-    { label: "Regular", value: totalReg },
-    { label: "OT", value: totalOT },
-    { label: "Leave", value: totalLeave },
-  ]
-  const leaveData = Object.entries(leaveMap).map(([label, value]) => ({ label, value }))
+const pieData = useMemo(() =>
+    pieTab === "leave"
+      ? [
+          { label: "Regular", value: totalReg },
+          { label: "Leave", value: totalLeave },
+        ]
+      : [
+          { label: "Regular", value: totalReg },
+          { label: "OT", value: totalOT },
+        ],
+    [pieTab, totalReg, totalOT, totalLeave]
+  )
 
-  useDoughnut(pieRef, pieData, [COLORS.regular, COLORS.ot, COLORS.leave[0]], setPieLegend)
-  useDoughnut(leaveRef, leaveData.length ? leaveData : [{ label: "No leave", value: 1 }], leaveData.length ? COLORS.leave : ["#B4B2A9"], setLeaveLegend)
-  useVerticalBar(barContainerRef, allRows, selectedEmps, setBarLegend)
+  const pieColors = useMemo(() =>
+    pieTab === "leave"
+      ? [COLORS.regular, COLORS.leave[0]]
+      : [COLORS.regular, COLORS.ot],
+    [pieTab]
+  )
+
+  const leaveData = useMemo(() =>
+    Object.entries(leaveMap).map(([label, value]) => ({ label, value })),
+    [leaveMap]
+  )
+
+  const leaveChartData = useMemo(() =>
+    leaveData.length ? leaveData : [{ label: "No leave", value: 1 }],
+    [leaveData]
+  )
+
+  const leaveChartColors = leaveData.length ? COLORS.leave : NO_LEAVE_COLORS
+
+  useDoughnut(pieRef, pieData, pieColors, setPieLegend)
+  useDoughnut(leaveRef, leaveChartData, leaveChartColors, setLeaveLegend)
+  useVerticalBar(barContainerRef, allRows, selectedEmps, setBarLegend, barTab)
 
   function applyFilters(data: any[], s: string, e: string, c: string) {
     const sf = s.replace(/-/g, "")
@@ -253,7 +267,6 @@ export default function Dashboard() {
   useEffect(() => {
     const session_id = localStorage.getItem("session_id")
     if (!session_id) { router.push("/upload"); return }
-    
     axios.get(`http://localhost:8000/api/session/${session_id}`)
       .then(res => {
         const data = res.data.raw || []
@@ -283,11 +296,8 @@ export default function Dashboard() {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-medium">Equipment Dashboard</h1>
-        <button
-          onClick={() => router.push("/upload")}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
-        >
+        <h1 className="text-2xl font-medium">Employee Dashboard</h1>
+        <button onClick={() => router.push("/upload")} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
           Upload new file
         </button>
       </div>
@@ -311,7 +321,7 @@ export default function Dashboard() {
         </div>
         <div className="flex items-end gap-2">
           <button onClick={() => applyFilters(rawData, startDate, endDate, crew)} className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700">Apply</button>
-          <button onClick={() => { setStartDate(""); setEndDate(""); setCrew(""); applyFilters(rawData, "", "", "") }} className="border border-gray-800 bg-gray-600 px-4 py-1.5 rounded-lg text-sm hover:bg-gray-800">Reset</button>
+          <button onClick={() => { setStartDate(""); setEndDate(""); setCrew(""); applyFilters(rawData, "", "", "") }} className="border border-gray-800 bg-gray-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-gray-800">Reset</button>
         </div>
       </div>
 
@@ -327,8 +337,26 @@ export default function Dashboard() {
 
       {/* Doughnut charts */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+
+        {/* Left — tabbed: Regular vs Leave / Regular vs OT */}
         <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <div className="text-sm font-medium text-bold text-gray-800 mb-3">Hours Breakdown</div>
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-sm font-medium text-gray-800">Hours Breakdown</div>
+            <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => setPieTab("leave")}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${pieTab === "leave" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+              >
+                Regular vs Leave
+              </button>
+              <button
+                onClick={() => setPieTab("ot")}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${pieTab === "ot" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+              >
+                Regular vs OT
+              </button>
+            </div>
+          </div>
           <div ref={pieRef} className="w-full" />
           <div className="flex flex-col gap-y-2 mt-3">
             {[...pieLegend].sort((a, b) => b.pct - a.pct).map(item => (
@@ -341,8 +369,10 @@ export default function Dashboard() {
             ))}
           </div>
         </div>
+
+        {/* Right — Leave hours by type */}
         <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <div className="text-sm font-medium text-gray-800 mb-3">Leave hours by type</div>
+          <div className="text-sm font-medium text-gray-800 mb-3">Leave Hours by Type</div>
           <div ref={leaveRef} className="w-full" />
           <div className="flex flex-col gap-y-2 mt-3 max-h-40 overflow-y-auto pr-1">
             {[...leaveLegend].sort((a, b) => b.pct - a.pct).map(item => (
@@ -359,7 +389,23 @@ export default function Dashboard() {
 
       {/* Vertical stacked bar */}
       <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4">
-        <div className="text-sm font-medium text-gray-800 mb-3">Hours per Employee</div>
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm font-medium text-gray-800">Hours per Employee</div>
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+            <button
+              onClick={() => setBarTab("leave")}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${barTab === "leave" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+            >
+              Regular vs Leave
+            </button>
+            <button
+              onClick={() => setBarTab("ot")}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${barTab === "ot" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+            >
+              Regular vs OT
+            </button>
+          </div>
+        </div>
         <div ref={barContainerRef} className="w-full" />
         {barLegend.length > 0 && (
           <div className="flex flex-wrap gap-x-5 gap-y-2 mt-3 pt-3 border-t border-gray-100">
@@ -402,11 +448,7 @@ export default function Dashboard() {
                     <td className="py-2 px-3">
                       <input type="checkbox" checked={selectedEmps.has(r.name)} onChange={e => toggleEmp(r.name, e.target.checked)} className="cursor-pointer" aria-label={`Select ${r.name}`} />
                     </td>
-                    <td
-                      className="py-2 px-3 cursor-pointer hover:text-blue-600 hover:underline font-medium"
-                      style={{ color: "#111827" }}
-                      onClick={() => setSelectedDetail(r)}
-                    >{r.name}</td>
+                    <td className="py-2 px-3 cursor-pointer hover:text-blue-600 hover:underline font-medium" style={{ color: "#111827" }} onClick={() => setSelectedDetail(r)}>{r.name}</td>
                     <td className="py-2 px-3" style={{ color: "#374151" }}>{r.crew}</td>
                     <td className="py-2 px-3" style={{ color: "#111827" }}>{r.reg.toFixed(1)}</td>
                     <td className="py-2 px-3" style={{ color: "#111827" }}>{r.ot.toFixed(1)}</td>
