@@ -12,7 +12,7 @@ export default function Navbar() {
     { name: "Home", href: "/" },
     { name: "Employees", href: "/dashboard" },
     { name: "Equipment", href: "/equipment" },
-    { name: "Account", href: "/Account" },
+    { name: "Account", href: "/account" },
   ];
 
   return (
@@ -33,9 +33,11 @@ export default function Navbar() {
               {navLinks.map((link) => {
                 const isActive = pathname === link.href;
                 return (
-                  <Link
-                    key={link.name}
-                    href={link.href}
+                <Link
+                  key={link.name}
+                  href={link.href}
+                  onClick={() => console.log("clicked", link.href)}
+
                     className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                       isActive 
                         ? "bg-slate-800 text-teal-400" 
