@@ -1,18 +1,11 @@
 "use client"
-import { useEffect, useRef, useState, useMemo, useCallback } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import * as d3 from "d3"
 import axios from "axios"
 import { EmployeeDetail, EmpRow } from "@/components/EmployeeDetail"
-
-const COLORS = {
-  regular: "#378ADD",
-  ot: "#1D9E75",
-  leave: ["#D85A30","#D4537E","#BA7517","#7F77DD","#639922","#E24B4A","#5DCAA5","#EF9F27"],
-}
-
-const PIE_COLORS = [COLORS.regular, COLORS.ot, COLORS.leave[0]]
-const NO_LEAVE_COLORS = ["#B4B2A9"]
+import HoursDonutCharts from "@/components/HoursDonutCharts"
+import HoursBarChart from "@/components/HoursBarChart"
+import EmployeeTable from "@/components/EmployeeTable"
 
 function buildRows(data: any[]): EmpRow[] {
   const map: Record<string, EmpRow> = {}
@@ -28,155 +21,6 @@ function buildRows(data: any[]): EmpRow[] {
   return Object.values(map)
 }
 
-type LegendItem = { label: string; value: number; color: string; pct: number }
-
-
-function useDoughnut(
-  ref: React.RefObject<HTMLDivElement | null>,
-  data: { label: string; value: number }[],
-  colors: string[],
-  onLegend: (items: LegendItem[]) => void
-) {
-
-  const onLegendRef = useRef(onLegend)
-  useEffect(() => { onLegendRef.current = onLegend })
-
-  useEffect(() => {
-    if (!ref.current) return
-    const el = ref.current
-    d3.select(el).selectAll("*").remove()
-
-    const w = el.clientWidth || 260
-    const h = 200
-    const r = Math.min(w, h) / 2 - 8
-    const svg = d3.select(el).append("svg").attr("width", w).attr("height", h)
-    const g = svg.append("g").attr("transform", `translate(${w / 2},${h / 2})`)
-
-    const total = d3.sum(data, d => d.value) || 1
-    const pie = d3.pie<{ label: string; value: number }>().value(d => d.value).sort(null)
-    const arc = d3.arc<d3.PieArcDatum<{ label: string; value: number }>>().innerRadius(r * 0.55).outerRadius(r)
-
-    g.selectAll("path")
-      .data(pie(data))
-      .join("path")
-      .attr("d", arc)
-      .attr("fill", (_, i) => colors[i % colors.length])
-      .attr("stroke", "#fff")
-      .attr("stroke-width", 2)
-
-    onLegendRef.current(data.map((d, i) => ({
-      label: d.label,
-      value: d.value,
-      color: colors[i % colors.length],
-      pct: Math.round(d.value / total * 100),
-    })))
-  }, [data, colors])
-}
-
-function useVerticalBar(
-  scrollRef: React.RefObject<HTMLDivElement | null>,
-  rows: EmpRow[],
-  selected: Set<string>,
-  onLegend: (items: { key: string; color: string }[]) => void,
-  tab: "leave" | "ot" = "leave"
-) {
-  const onLegendRef = useRef(onLegend)
-  useEffect(() => { onLegendRef.current = onLegend })
-
-  useEffect(() => {
-    if (!scrollRef.current) return
-    const container = scrollRef.current
-    container.innerHTML = ""
-
-    const active = rows.filter(r => selected.has(r.name)).sort((a, b) => b.reg - a.reg)
-    if (!active.length) return
-
-    const leaveTypes = [...new Set(active.flatMap(r => [...r.leaveTypes]))]
-    const keys = tab === "ot"
-      ? ["Regular", "OT"]
-      : ["Regular", ...leaveTypes]
-    const colorMap: Record<string, string> = { Regular: COLORS.regular, OT: COLORS.ot }
-    leaveTypes.forEach((lt, i) => { colorMap[lt] = COLORS.leave[i % COLORS.leave.length] })
-
-    const stackData = active.map(r => {
-      if (tab === "ot") {
-        return { name: r.name, Regular: r.reg, OT: r.ot }
-      }
-      const lm: Record<string, number> = {}
-      r.rawRows.forEach((d: any) => {
-        const lt = (d["Leave Description"] || "").trim()
-        if (lt) lm[lt] = (lm[lt] || 0) + (Number(d["Leave Hours"]) || 0)
-      })
-      return { name: r.name, Regular: r.reg, ...lm }
-    })
-
-    const margin = { top: 16, right: 16, bottom: 72, left: 52 }
-    const chartH = 300
-    const colW = 52
-    const chartW = Math.max(active.length * colW, 400)
-    const totalW = chartW + margin.left + margin.right
-    const totalH = chartH + margin.top + margin.bottom
-    const maxVal = d3.max(stackData, d => keys.reduce((s, k) => s + ((d as any)[k] || 0), 0)) || 1
-
-    const yAxisW = margin.left
-    const yAxisSvg = d3.create("svg")
-      .attr("width", yAxisW).attr("height", totalH)
-      .style("flex-shrink", "0").style("position", "sticky")
-      .style("left", "0").style("z-index", "10").style("background", "#fff")
-
-    const yScale = d3.scaleLinear().domain([0, maxVal]).nice().range([chartH, 0])
-
-    yAxisSvg.append("g")
-      .attr("transform", `translate(${yAxisW - 1},${margin.top})`)
-      .call(d3.axisLeft(yScale).ticks(5).tickSize(0))
-      .call(ax => ax.select(".domain").remove())
-      .call(ax => ax.selectAll(".tick text").attr("font-size", 11).attr("fill", "#374151").attr("dx", -4))
-
-    const barSvg = d3.create("svg").attr("width", totalW).attr("height", totalH)
-    const g = barSvg.append("g").attr("transform", `translate(${margin.left},${margin.top})`)
-
-    g.append("g")
-      .call(d3.axisLeft(yScale).ticks(5).tickSize(-chartW))
-      .call(ax => ax.select(".domain").remove())
-      .call(ax => ax.selectAll("line").attr("stroke", "#e5e7eb"))
-      .call(ax => ax.selectAll("text").remove())
-
-    const xScale = d3.scaleBand().domain(active.map(r => r.name)).range([0, chartW]).padding(0.3)
-    const stack = d3.stack<any>().keys(keys).value((d, k) => (d as any)[k] || 0)
-
-    g.selectAll("g.layer")
-      .data(stack(stackData)).join("g")
-      .attr("class", "layer")
-      .attr("fill", d => colorMap[d.key] || "#ccc")
-      .selectAll("rect").data(d => d).join("rect")
-      .attr("x", (_, i) => xScale(active[i].name)!)
-      .attr("y", d => yScale(d[1]))
-      .attr("height", d => yScale(d[0]) - yScale(d[1]))
-      .attr("width", xScale.bandwidth())
-      .attr("rx", 2)
-
-    g.append("g")
-      .attr("transform", `translate(0,${chartH})`)
-      .call(d3.axisBottom(xScale).tickSize(0))
-      .call(ax => ax.select(".domain").remove())
-      .call(ax => ax.selectAll(".tick text")
-        .attr("font-size", 10).attr("fill", "#111827")
-        .attr("text-anchor", "end").attr("transform", "rotate(-40)")
-        .attr("dy", "0.35em").attr("dx", "-0.5em"))
-
-    const wrapper = document.createElement("div")
-    wrapper.style.cssText = "display:flex;align-items:flex-start;width:100%;"
-    wrapper.appendChild(yAxisSvg.node()!)
-    const scrollArea = document.createElement("div")
-    scrollArea.style.cssText = "overflow-x:auto;flex:1;"
-    scrollArea.appendChild(barSvg.node()!)
-    wrapper.appendChild(scrollArea)
-    container.appendChild(wrapper)
-
-    onLegendRef.current(keys.map(k => ({ key: k, color: colorMap[k] || "#ccc" })))
-  }, [rows, selected, tab])
-}
-
 export default function Dashboard() {
   const router = useRouter()
   const [rawData, setRawData] = useState<any[]>([])
@@ -186,68 +30,13 @@ export default function Dashboard() {
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
   const [crew, setCrew] = useState("")
-  const [pieLegend, setPieLegend] = useState<LegendItem[]>([])
-  const [leaveLegend, setLeaveLegend] = useState<LegendItem[]>([])
-  const [barLegend, setBarLegend] = useState<{ key: string; color: string }[]>([])
   const [selectedDetail, setSelectedDetail] = useState<EmpRow | null>(null)
-  const [pieTab, setPieTab] = useState<"leave" | "ot">("leave")
-  const [barTab, setBarTab] = useState<"leave" | "ot">("leave")
 
-  const pieRef = useRef<HTMLDivElement>(null)
-  const leaveRef = useRef<HTMLDivElement>(null)
-  const barContainerRef = useRef<HTMLDivElement>(null)
-
+  // active is the single source of truth — date/crew filtered + checkbox selected
   const active = allRows.filter(r => selectedEmps.has(r.name))
   const totalReg = active.reduce((s, r) => s + r.reg, 0)
   const totalOT = active.reduce((s, r) => s + r.ot, 0)
   const totalLeave = active.reduce((s, r) => s + r.leaveHrs, 0)
-
-  const leaveMap = useMemo(() => {
-    const map: Record<string, number> = {}
-    active.forEach(r => {
-      r.rawRows.forEach((d: any) => {
-        const lt = (d["Leave Description"] || "").trim()
-        if (lt) map[lt] = (map[lt] || 0) + (Number(d["Leave Hours"]) || 0)
-      })
-    })
-    return map
-  }, [selectedEmps, allRows])
-
-const pieData = useMemo(() =>
-    pieTab === "leave"
-      ? [
-          { label: "Regular", value: totalReg },
-          { label: "Leave", value: totalLeave },
-        ]
-      : [
-          { label: "Regular", value: totalReg },
-          { label: "OT", value: totalOT },
-        ],
-    [pieTab, totalReg, totalOT, totalLeave]
-  )
-
-  const pieColors = useMemo(() =>
-    pieTab === "leave"
-      ? [COLORS.regular, COLORS.leave[0]]
-      : [COLORS.regular, COLORS.ot],
-    [pieTab]
-  )
-
-  const leaveData = useMemo(() =>
-    Object.entries(leaveMap).map(([label, value]) => ({ label, value })),
-    [leaveMap]
-  )
-
-  const leaveChartData = useMemo(() =>
-    leaveData.length ? leaveData : [{ label: "No leave", value: 1 }],
-    [leaveData]
-  )
-
-  const leaveChartColors = leaveData.length ? COLORS.leave : NO_LEAVE_COLORS
-
-  useDoughnut(pieRef, pieData, pieColors, setPieLegend)
-  useDoughnut(leaveRef, leaveChartData, leaveChartColors, setLeaveLegend)
-  useVerticalBar(barContainerRef, allRows, selectedEmps, setBarLegend, barTab)
 
   function applyFilters(data: any[], s: string, e: string, c: string) {
     const sf = s.replace(/-/g, "")
@@ -289,9 +78,6 @@ const pieData = useMemo(() =>
   function toggleAll(checked: boolean) {
     setSelectedEmps(checked ? new Set(allRows.map(r => r.name)) : new Set())
   }
-
-  const allChecked = selectedEmps.size === allRows.length
-  const someChecked = selectedEmps.size > 0 && !allChecked
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -335,133 +121,18 @@ const pieData = useMemo(() =>
         ))}
       </div>
 
-      {/* Doughnut charts */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+      {/* All charts receive the same `active` array */}
+      <HoursDonutCharts active={active} />
+      <HoursBarChart active={active} />
 
-        {/* Left — tabbed: Regular vs Leave / Regular vs OT */}
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-sm font-medium text-gray-800">Hours Breakdown</div>
-            <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-              <button
-                onClick={() => setPieTab("leave")}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${pieTab === "leave" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
-              >
-                Regular vs Leave
-              </button>
-              <button
-                onClick={() => setPieTab("ot")}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${pieTab === "ot" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
-              >
-                Regular vs OT
-              </button>
-            </div>
-          </div>
-          <div ref={pieRef} className="w-full" />
-          <div className="flex flex-col gap-y-2 mt-3">
-            {[...pieLegend].sort((a, b) => b.pct - a.pct).map(item => (
-              <div key={item.label} className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: item.color }} />
-                <span className="text-xs text-gray-800 flex-1 font-medium">{item.label}</span>
-                <span className="text-xs text-gray-600 flex-shrink-0">{item.value.toFixed(1)} hrs</span>
-                <span className="text-xs font-semibold text-gray-800 flex-shrink-0 w-9 text-right">{item.pct}%</span>
-              </div>
-            ))}
-          </div>
-        </div>
+      <EmployeeTable
+        allRows={allRows}
+        selectedEmps={selectedEmps}
+        onToggle={toggleEmp}
+        onToggleAll={toggleAll}
+        onSelect={setSelectedDetail}
+      />
 
-        {/* Right — Leave hours by type */}
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <div className="text-sm font-medium text-gray-800 mb-3">Leave Hours by Type</div>
-          <div ref={leaveRef} className="w-full" />
-          <div className="flex flex-col gap-y-2 mt-3 max-h-40 overflow-y-auto pr-1">
-            {[...leaveLegend].sort((a, b) => b.pct - a.pct).map(item => (
-              <div key={item.label} className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: item.color }} />
-                <span className="text-xs text-gray-800 flex-1 font-medium">{item.label}</span>
-                <span className="text-xs text-gray-600 flex-shrink-0">{item.value.toFixed(1)} hrs</span>
-                <span className="text-xs font-semibold text-gray-800 flex-shrink-0 w-9 text-right">{item.pct}%</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Vertical stacked bar */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4">
-        <div className="flex items-center justify-between mb-3">
-          <div className="text-sm font-medium text-gray-800">Hours per Employee</div>
-          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-            <button
-              onClick={() => setBarTab("leave")}
-              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${barTab === "leave" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
-            >
-              Regular vs Leave
-            </button>
-            <button
-              onClick={() => setBarTab("ot")}
-              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${barTab === "ot" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
-            >
-              Regular vs OT
-            </button>
-          </div>
-        </div>
-        <div ref={barContainerRef} className="w-full" />
-        {barLegend.length > 0 && (
-          <div className="flex flex-wrap gap-x-5 gap-y-2 mt-3 pt-3 border-t border-gray-100">
-            {barLegend.map(item => (
-              <div key={item.key} className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: item.color }} />
-                <span className="text-xs font-medium text-gray-800">{item.key}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Table */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4">
-        <div className="text-sm font-medium text-gray-800 mb-3">Employee Summary</div>
-        <div className="overflow-x-auto">
-          <div className="overflow-y-auto" style={{ maxHeight: 400 }}>
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10 bg-white">
-                <tr className="border-b border-gray-200">
-                  <th className="py-2 px-3 w-10 bg-white">
-                    <input
-                      type="checkbox"
-                      checked={allChecked}
-                      ref={el => { if (el) el.indeterminate = someChecked }}
-                      onChange={e => toggleAll(e.target.checked)}
-                      aria-label="Select all"
-                      className="cursor-pointer"
-                    />
-                  </th>
-                  {["Employee","Crew","Regular hrs","OT hrs","Leave type","Leave hrs","Total hrs"].map(h => (
-                    <th key={h} className="text-left py-2 px-3 text-xs text-gray-600 font-semibold bg-white">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {allRows.map(r => (
-                  <tr key={r.name} className={`border-b border-gray-100 hover:bg-gray-50 transition-opacity ${selectedEmps.has(r.name) ? "opacity-100" : "opacity-40"}`}>
-                    <td className="py-2 px-3">
-                      <input type="checkbox" checked={selectedEmps.has(r.name)} onChange={e => toggleEmp(r.name, e.target.checked)} className="cursor-pointer" aria-label={`Select ${r.name}`} />
-                    </td>
-                    <td className="py-2 px-3 cursor-pointer hover:text-blue-600 hover:underline font-medium" style={{ color: "#111827" }} onClick={() => setSelectedDetail(r)}>{r.name}</td>
-                    <td className="py-2 px-3" style={{ color: "#374151" }}>{r.crew}</td>
-                    <td className="py-2 px-3" style={{ color: "#111827" }}>{r.reg.toFixed(1)}</td>
-                    <td className="py-2 px-3" style={{ color: "#111827" }}>{r.ot.toFixed(1)}</td>
-                    <td className="py-2 px-3" style={{ color: "#374151" }}>{[...r.leaveTypes].join(", ") || "—"}</td>
-                    <td className="py-2 px-3" style={{ color: "#111827" }}>{r.leaveHrs.toFixed(1)}</td>
-                    <td className="py-2 px-3 font-semibold" style={{ color: "#111827" }}>{(r.reg + r.ot + r.leaveHrs).toFixed(1)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
       <EmployeeDetail emp={selectedDetail} onClose={() => setSelectedDetail(null)} />
     </div>
   )
