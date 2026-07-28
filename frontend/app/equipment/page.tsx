@@ -5,8 +5,77 @@ import axios from "axios"
 import { EquipRow } from "@/components/EquipRow"
 import EquipmentBarCharts from "@/components/EquipmentBarCharts"
 import EquipmentTable from "@/components/EquipmentTable"
+import EquipmentCalendar from "@/components/EquipmentCalendar"
 
 type LegendItem = { label: string; value: number; color: string; pct: number }
+type Tab = "charts" | "calendar"
+
+const EQUIP_TYPE_MAP: Record<string, string> = {
+  // ---------- Truck ----------
+  "UTILITY TRUCK": "Truck",
+  "HOOK LIFT": "Truck",
+  "TANK TRUCK": "Truck",
+  "SERVICE TRUCK": "Truck",
+  "DUMP TRUCK": "Truck",
+  "STAKE": "Truck",
+  "CAB/CHASSIS": "Truck",
+  "CREW CAB": "Truck",
+  "PICKUP": "Truck",
+  "P/U": "Truck",
+  "TRUCK": "Truck",
+  "F150": "Truck",
+  "F250": "Truck",
+  "F350": "Truck",
+  "F450": "Truck",
+ 
+  // ---------- Van ----------
+  "PASSENGER VAN": "Van",
+  "VAN": "Van",
+ 
+  // ---------- Tractor / Mower ----------
+  "GUARDRAIL MOWER": "Tractor/Mower",
+  "ZERO TURN": "Tractor/Mower",
+  "ROTARY": "Tractor/Mower",
+  "MOWER": "Tractor/Mower",
+  "TRACTOR": "Tractor/Mower",
+ 
+  // ---------- Compact ----------
+  "MINI EXCAVATOR": "Compact",
+  "TRACKLOADER": "Compact",
+  "TRACK LOADER": "Compact",
+  "SKIDSTEER": "Compact",
+  "SKID STEER": "Compact",
+  "COMPACT": "Compact",
+
+  // ---------- Heavy Equipment ----------
+  "BACKHOE": "Heavy Equipment",
+  "EXCAVATOR": "Heavy Equipment",
+  "LOADER": "Heavy Equipment",
+  "GRADER": "Heavy Equipment",
+  "ROLLER": "Heavy Equipment",
+  "CRANE": "Heavy Equipment",
+
+  // ---------- Trailer ----------
+  "LOWBOY": "Trailer",
+  "BOAT TRAILER": "Trailer",
+  "TRAILER": "Trailer",
+
+  // ---------- Support Equipment ----------
+  "MESSAGE BOARD": "Support Equipment",
+  "WANCO": "Support Equipment",
+  "CHIPPER": "Support Equipment",
+  "AERIAL": "Support Equipment",
+  "GENERATOR": "Support Equipment",
+  "COMPRESSOR": "Support Equipment",
+};
+
+function getEquipType(desc: string): string {
+  const upper = desc.toUpperCase()
+  for (const [key, type] of Object.entries(EQUIP_TYPE_MAP)) {
+    if (upper.includes(key)) return type
+  }
+  return "Other"
+}
 
 function buildRows(data: any[]): EquipRow[] {
   const map: Record<string, EquipRow> = {}
@@ -15,12 +84,14 @@ function buildRows(data: any[]): EquipRow[] {
     const unit = String(r["Unit Number"] || "").trim()
     const fleetDigit = fleet.length >= 4 ? fleet[3] : ""
     const equipId = fleetDigit && unit ? `${fleetDigit}${unit}` : unit || "Unknown"
+    const desc = String(r["Equipment Description"] || "").trim()
 
     if (!map[equipId]) map[equipId] = {
       code: equipId,
       year: String(r["Equipment Year"] || "").trim(),
-      desc: String(r["Equipment Description"] || "").trim(),
+      desc,
       crew: String(r["Crew Code"] || "").trim(),
+      equipType: getEquipType(desc),
       totalMiles: 0,
       totalHours: 0,
       daysUsed: new Set(),
@@ -49,12 +120,18 @@ export default function EquipmentDashboard() {
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
   const [crew, setCrew] = useState("")
+  const [equipType, setEquipType] = useState("")
   const [fnLegend, setFnLegend] = useState<LegendItem[]>([])
+  const [tab, setTab] = useState<Tab>("charts")
 
-  // useMemo so active is a stable reference — only recalculates when allRows or selectedEquip change
   const active = useMemo(
     () => allRows.filter(r => selectedEquip.has(r.code)),
     [allRows, selectedEquip]
+  )
+
+  const equipTypes = useMemo(() =>
+    [...new Set(allRows.map(r => r.equipType).filter(Boolean))].sort(),
+    [allRows]
   )
 
   const totalMiles = useMemo(() => active.reduce((s, r) => s + r.totalMiles, 0), [active])
@@ -62,7 +139,7 @@ export default function EquipmentDashboard() {
   const totalDays = useMemo(() => new Set(active.flatMap(r => [...r.daysUsed])).size, [active])
   const totalVehicles = active.length
 
-  function applyFilters(data: any[], s: string, e: string, c: string) {
+  function applyFilters(data: any[], s: string, e: string, c: string, et: string) {
     const sf = s.replace(/-/g, "")
     const ef = e.replace(/-/g, "")
     const filtered = data.filter((r: any) => {
@@ -73,8 +150,9 @@ export default function EquipmentDashboard() {
       return true
     })
     const rows = buildRows(filtered)
-    setAllRows(rows)
-    setSelectedEquip(new Set(rows.map(r => r.code)))
+    const finalRows = et ? rows.filter(r => r.equipType === et) : rows
+    setAllRows(finalRows)
+    setSelectedEquip(new Set(finalRows.map(r => r.code)))
   }
 
   useEffect(() => {
@@ -85,7 +163,7 @@ export default function EquipmentDashboard() {
         const data = res.data.raw || []
         setRawData(data)
         setCrews([...new Set<string>(data.map((r: any) => r["Crew Code"]).filter(Boolean))].sort())
-        applyFilters(data, "", "", "")
+        applyFilters(data, "", "", "", "")
       })
       .catch(() => router.push("/upload"))
   }, [])
@@ -129,9 +207,19 @@ export default function EquipmentDashboard() {
             {crews.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-gray-600">Equipment type</label>
+          <select value={equipType} onChange={e => setEquipType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-800">
+            <option value="">All types</option>
+            {equipTypes.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
         <div className="flex items-end gap-2">
-          <button onClick={() => applyFilters(rawData, startDate, endDate, crew)} className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700">Apply</button>
-          <button onClick={() => { setStartDate(""); setEndDate(""); setCrew(""); applyFilters(rawData, "", "", "") }} className="border border-gray-800 bg-gray-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-gray-800">Reset</button>
+          <button onClick={() => applyFilters(rawData, startDate, endDate, crew, equipType)} className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700">Apply</button>
+          <button onClick={() => {
+            setStartDate(""); setEndDate(""); setCrew(""); setEquipType("")
+            applyFilters(rawData, "", "", "", "")
+          }} className="border border-gray-800 bg-gray-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-gray-800">Reset</button>
         </div>
       </div>
 
@@ -150,18 +238,43 @@ export default function EquipmentDashboard() {
         ))}
       </div>
 
-      <EquipmentBarCharts
-        active={active}
-        fnLegend={fnLegend}
-        setFnLegend={setFnLegend}
-      />
+      {/* Tab switcher */}
+      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-6 w-fit">
+        <button
+          onClick={() => setTab("charts")}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === "charts" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+        >
+          Charts
+        </button>
+        <button
+          onClick={() => setTab("calendar")}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === "calendar" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+        >
+          Calendar
+        </button>
+      </div>
 
-      <EquipmentTable
-        allRows={allRows}
-        selectedEquip={selectedEquip}
-        onToggle={toggleEquip}
-        onToggleAll={toggleAll}
-      />
+      {/* Charts tab */}
+      {tab === "charts" && (
+        <>
+          <EquipmentBarCharts
+            active={active}
+            fnLegend={fnLegend}
+            setFnLegend={setFnLegend}
+          />
+          <EquipmentTable
+            allRows={allRows}
+            selectedEquip={selectedEquip}
+            onToggle={toggleEquip}
+            onToggleAll={toggleAll}
+          />
+        </>
+      )}
+
+      {/* Calendar tab */}
+      {tab === "calendar" && (
+        <EquipmentCalendar allRows={allRows} active={active} />
+      )}
     </div>
   )
 }
