@@ -3,6 +3,7 @@ export interface EquipRow {
   year: string
   desc: string
   crew: string
+  equipType: string
   totalMiles: number
   totalHours: number
   daysUsed: Set<string>

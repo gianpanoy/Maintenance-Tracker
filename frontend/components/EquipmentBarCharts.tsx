@@ -11,18 +11,21 @@ const COLORS = {
 
 type LegendItem = { label: string; value: number; color: string; pct: number }
 
-function useMilesBar(ref: React.RefObject<HTMLDivElement | null>, active: EquipRow[]) {
-  const activeRef = useRef(active)
-  useEffect(() => { activeRef.current = active })
-
+function useHorizontalBar(
+  ref: React.RefObject<HTMLDivElement | null>,
+  rows: EquipRow[],
+  valueKey: "totalMiles" | "totalHours",
+  color: string,
+  unit: string
+) {
   useEffect(() => {
     if (!ref.current) return
     const el = ref.current
     d3.select(el).selectAll("*").remove()
-    const sorted = [...activeRef.current].sort((a, b) => b.totalMiles - a.totalMiles)
+    const sorted = [...rows].sort((a, b) => b[valueKey] - a[valueKey])
     if (!sorted.length) return
 
-    const margin = { top: 10, right: 20, bottom: 20, left: 180 }
+    const margin = { top: 10, right: 60, bottom: 20, left: 180 }
     const rowH = 36
     const w = (el.getBoundingClientRect().width || 600) - margin.left - margin.right
     const h = sorted.length * rowH
@@ -33,17 +36,10 @@ function useMilesBar(ref: React.RefObject<HTMLDivElement | null>, active: EquipR
       .attr("height", h + margin.top + margin.bottom)
     const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`)
 
-    const x = d3.scaleLinear().domain([0, d3.max(sorted, d => d.totalMiles) || 1]).range([0, w])
+    const x = d3.scaleLinear().domain([0, d3.max(sorted, d => d[valueKey]) || 1]).range([0, w])
     const y = d3.scaleBand().domain(sorted.map(r => r.code)).range([0, h]).padding(0.3)
 
-    g.selectAll("rect").data(sorted).join("rect")
-      .attr("y", d => y(d.code)!)
-      .attr("x", 0)
-      .attr("width", d => x(d.totalMiles))
-      .attr("height", y.bandwidth())
-      .attr("fill", COLORS.miles)
-      .attr("rx", 2)
-
+    // Gridlines
     g.append("g")
       .call(d3.axisBottom(x).ticks(5).tickSize(-h))
       .attr("transform", `translate(0,${h})`)
@@ -51,6 +47,26 @@ function useMilesBar(ref: React.RefObject<HTMLDivElement | null>, active: EquipR
       .call(ax => ax.selectAll("line").attr("stroke", "#e5e7eb"))
       .call(ax => ax.selectAll("text").attr("font-size", 11).attr("fill", "#888"))
 
+    // Bars
+    g.selectAll("rect").data(sorted).join("rect")
+      .attr("y", d => y(d.code)!)
+      .attr("x", 0)
+      .attr("width", d => x(d[valueKey]))
+      .attr("height", y.bandwidth())
+      .attr("fill", color)
+      .attr("rx", 2)
+
+    // Value labels at end of bar
+    g.selectAll("text.val").data(sorted).join("text")
+      .attr("class", "val")
+      .attr("x", d => x(d[valueKey]) + 4)
+      .attr("y", d => y(d.code)! + y.bandwidth() / 2)
+      .attr("dominant-baseline", "middle")
+      .attr("font-size", 10)
+      .attr("fill", "#6b7280")
+      .text(d => `${d[valueKey].toFixed(valueKey === "totalHours" ? 1 : 0)} ${unit}`)
+
+    // Y axis — code + desc
     g.append("g")
       .call(d3.axisLeft(y).tickSize(0))
       .call(ax => ax.select(".domain").remove())
@@ -62,61 +78,7 @@ function useMilesBar(ref: React.RefObject<HTMLDivElement | null>, active: EquipR
           return label.length > 24 ? label.slice(0, 24) + "…" : label
         })
       )
-  }, [active])
-}
-
-function useHoursBar(ref: React.RefObject<HTMLDivElement | null>, active: EquipRow[]) {
-  const activeRef = useRef(active)
-  useEffect(() => { activeRef.current = active })
-
-  useEffect(() => {
-    if (!ref.current) return
-    const el = ref.current
-    d3.select(el).selectAll("*").remove()
-    const sorted = [...activeRef.current].sort((a, b) => b.totalHours - a.totalHours)
-    if (!sorted.length) return
-
-    const margin = { top: 10, right: 20, bottom: 20, left: 180 }
-    const rowH = 36
-    const w = (el.getBoundingClientRect().width || 600) - margin.left - margin.right
-    const h = sorted.length * rowH
-
-    const svg = d3.select(el)
-      .append("svg")
-      .attr("width", w + margin.left + margin.right)
-      .attr("height", h + margin.top + margin.bottom)
-    const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`)
-
-    const x = d3.scaleLinear().domain([0, d3.max(sorted, d => d.totalHours) || 1]).range([0, w])
-    const y = d3.scaleBand().domain(sorted.map(r => r.code)).range([0, h]).padding(0.3)
-
-    g.selectAll("rect").data(sorted).join("rect")
-      .attr("y", d => y(d.code)!)
-      .attr("x", 0)
-      .attr("width", d => x(d.totalHours))
-      .attr("height", y.bandwidth())
-      .attr("fill", COLORS.hours)
-      .attr("rx", 2)
-
-    g.append("g")
-      .call(d3.axisBottom(x).ticks(5).tickSize(-h))
-      .attr("transform", `translate(0,${h})`)
-      .call(ax => ax.select(".domain").remove())
-      .call(ax => ax.selectAll("line").attr("stroke", "#e5e7eb"))
-      .call(ax => ax.selectAll("text").attr("font-size", 11).attr("fill", "#888"))
-
-    g.append("g")
-      .call(d3.axisLeft(y).tickSize(0))
-      .call(ax => ax.select(".domain").remove())
-      .call(ax => ax.selectAll(".tick text")
-        .attr("font-size", 11).attr("fill", "#374151").attr("dx", -6)
-        .text((d: any) => {
-          const row = sorted.find(r => r.code === d)
-          const label = row ? `${d} — ${row.desc.slice(0, 16)}` : String(d)
-          return label.length > 24 ? label.slice(0, 24) + "…" : label
-        })
-      )
-  }, [active])
+  }, [rows, valueKey, color, unit])
 }
 
 function useFunctionBar(
@@ -127,18 +89,14 @@ function useFunctionBar(
   const onLegendRef = useRef(onLegend)
   useEffect(() => { onLegendRef.current = onLegend })
 
-  const activeRef = useRef(active)
-  useEffect(() => { activeRef.current = active })
-
   useEffect(() => {
     if (!ref.current) return
     const el = ref.current
     d3.select(el).selectAll("*").remove()
-    const current = activeRef.current
-    if (!current.length) return
+    if (!active.length) return
 
     const fnMap: Record<string, number> = {}
-    current.forEach(r => {
+    active.forEach(r => {
       Object.entries(r.functions).forEach(([fn, miles]) => {
         fnMap[fn] = (fnMap[fn] || 0) + miles
       })
@@ -202,30 +160,48 @@ interface Props {
   setFnLegend: (items: LegendItem[]) => void
 }
 
-// memo prevents re-render unless active actually changes
 const EquipmentBarCharts = memo(function EquipmentBarCharts({ active, fnLegend, setFnLegend }: Props) {
   const milesBarRef = useRef<HTMLDivElement>(null)
   const hoursBarRef = useRef<HTMLDivElement>(null)
   const fnBarRef = useRef<HTMLDivElement>(null)
-  const barH = active.length * 36 + 30
 
-  useMilesBar(milesBarRef, active)
-  useHoursBar(hoursBarRef, active)
+  // Split by primary metric
+  const milesEquip = active.filter(r => r.totalMiles > 0)
+  const hoursEquip = active.filter(r => r.totalHours > 0 && r.totalMiles === 0)
+  const milesBarH = milesEquip.length * 36 + 30
+  const hoursBarH = hoursEquip.length * 36 + 30
+
+  useHorizontalBar(milesBarRef, milesEquip, "totalMiles", COLORS.miles, "mi")
+  useHorizontalBar(hoursBarRef, hoursEquip, "totalHours", COLORS.hours, "hrs")
   useFunctionBar(fnBarRef, active, setFnLegend)
 
   return (
     <>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <div className="text-sm font-medium text-gray-800 mb-3">Miles per Vehicle</div>
-          <div ref={milesBarRef} className="w-full" style={{ minHeight: `${barH}px` }} />
+      {/* Miles bar — only if any equipment logs miles */}
+      {milesEquip.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: COLORS.miles }} />
+            <div className="text-sm font-medium text-gray-800">Miles per Vehicle</div>
+            <span className="text-xs text-gray-400 ml-1">({milesEquip.length} vehicles)</span>
+          </div>
+          <div ref={milesBarRef} className="w-full" style={{ minHeight: `${milesBarH}px` }} />
         </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <div className="text-sm font-medium text-gray-800 mb-3">Hours per Vehicle</div>
-          <div ref={hoursBarRef} className="w-full" style={{ minHeight: `${barH}px` }} />
-        </div>
-      </div>
+      )}
 
+      {/* Hours bar — only if any equipment logs hours */}
+      {hoursEquip.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: COLORS.hours }} />
+            <div className="text-sm font-medium text-gray-800">Hours per Equipment</div>
+            <span className="text-xs text-gray-400 ml-1">({hoursEquip.length} units)</span>
+          </div>
+          <div ref={hoursBarRef} className="w-full" style={{ minHeight: `${hoursBarH}px` }} />
+        </div>
+      )}
+
+      {/* Miles by work type */}
       <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4">
         <div className="text-sm font-medium text-gray-800 mb-3">Miles by Work Type</div>
         <div ref={fnBarRef} className="w-full" style={{ minHeight: "320px" }} />
