@@ -40,6 +40,7 @@ interface DayEntry {
   hours: number
   operators: Set<string>
   functions: Set<string>
+  charges: Set<string>
 }
 
 interface CalendarCell {
@@ -53,30 +54,31 @@ interface CalendarCell {
 interface Props {
   allRows: EquipRow[]
   active: EquipRow[]
+  focusDate?: string
 }
 
-export default function EquipmentCalendar({ allRows, active }: Props) {
+export default function EquipmentCalendar({ active, focusDate }: Props) {
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth())
-  const [selectedType, setSelectedType] = useState("")
   const [selectedDay, setSelectedDay] = useState<number | null>(null)
   const drawerRef = useRef<HTMLDivElement>(null)
 
-  const equipTypes = useMemo(() =>
-    [...new Set(allRows.map(r => r.equipType).filter(Boolean))].sort(),
-    [allRows]
-  )
-
-  const displayRows = useMemo(() =>
-    active.filter(r => !selectedType || r.equipType === selectedType),
-    [active, selectedType]
-  )
+  // Jump to the applied filter's start date whenever it changes
+  useEffect(() => {
+    if (!focusDate) return
+    const parts = focusDate.split("-").map(Number)
+    const [fy, fm] = parts
+    if (!fy || !fm) return
+    setYear(fy)
+    setMonth(fm - 1)
+    setSelectedDay(null)
+  }, [focusDate])
 
   // Build usage map: day -> equipCode -> DayEntry
   const usageByDay = useMemo(() => {
     const map: Record<number, Record<string, DayEntry>> = {}
-    displayRows.forEach(r => {
+    active.forEach(r => {
       r.rawRows.forEach((row: any) => {
         const parsed = parseDate(String(row["Date"] || ""))
         if (!parsed) return
@@ -92,6 +94,7 @@ export default function EquipmentCalendar({ allRows, active }: Props) {
             hours: 0,
             operators: new Set(),
             functions: new Set(),
+            charges: new Set(),
           }
         }
         map[d][r.code].miles += Number(row["Run Miles"]) || 0
@@ -100,10 +103,15 @@ export default function EquipmentCalendar({ allRows, active }: Props) {
         if (op) map[d][r.code].operators.add(op)
         const fn = (row["Function Description"] || "").trim()
         if (fn) map[d][r.code].functions.add(fn)
+        const chargeCode = (row["Charge Code"] || "").trim()
+        const chargeDesc = (row["Charge Description"] || "").trim()
+        if (chargeCode || chargeDesc) {
+          map[d][r.code].charges.add([chargeCode, chargeDesc].filter(Boolean).join(" — "))
+        }
       })
     })
     return map
-  }, [displayRows, year, month])
+  }, [active, year, month])
 
   const monthName = new Date(year, month, 1).toLocaleString("default", { month: "long" })
   const daysInMonth = getDaysInMonth(year, month)
@@ -189,6 +197,9 @@ export default function EquipmentCalendar({ allRows, active }: Props) {
     { miles: 0, hours: 0 }
   )
 
+  const monthOptions = Array.from({ length: 12 }, (_, i) => i)
+  const yearOptions = Array.from({ length: 13 }, (_, i) => now.getFullYear() - 10 + i)
+
   return (
     <div className="relative">
       {/* Controls */}
@@ -199,34 +210,39 @@ export default function EquipmentCalendar({ allRows, active }: Props) {
               <path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </button>
-          <span className="text-sm font-semibold text-gray-800 w-36 text-center">{monthName} {year}</span>
+
+          <select
+            value={month}
+            onChange={e => { setMonth(Number(e.target.value)); setSelectedDay(null) }}
+            className="border border-gray-200 rounded-lg px-2 py-1 text-sm font-semibold text-gray-400 bg-white"
+          >
+            {monthOptions.map(m => (
+              <option key={m} value={m}>{new Date(2000, m, 1).toLocaleString("default", { month: "long" })}</option>
+            ))}
+          </select>
+          <select
+            value={year}
+            onChange={e => { setYear(Number(e.target.value)); setSelectedDay(null) }}
+            className="border border-gray-200 rounded-lg px-2 py-1 text-sm font-semibold text-gray-400 bg-white"
+          >
+            {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+
           <button onClick={nextMonth} className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-600">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </button>
-          <button onClick={goToday} className="ml-1 px-2.5 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 text-xs text-gray-600 font-medium">
+          <button onClick={goToday} className="ml-1 px-2.5 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 text-xs text-gray-400 font-medium">
             Today
           </button>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-gray-500">Type</label>
-          <select
-            value={selectedType}
-            onChange={e => { setSelectedType(e.target.value); setSelectedDay(null) }}
-            className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-gray-800 bg-white"
-          >
-            <option value="">All types</option>
-            {equipTypes.map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
         </div>
 
         <div className="flex flex-wrap gap-3 ml-auto">
           {Object.entries(TYPE_COLORS).map(([type, color]) => (
             <div key={type} className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: color }} />
-              <span className="text-xs text-gray-600">{type}</span>
+              <span className="text-xs text-gray-400">{type}</span>
             </div>
           ))}
         </div>
@@ -247,12 +263,11 @@ export default function EquipmentCalendar({ allRows, active }: Props) {
         <div className="grid grid-cols-7">
           {cells.map((cell, i) => {
             const dayEntries = cell.inMonth ? Object.values(usageByDay[cell.day] || {}) : []
-            const typesPresent = [...new Set(dayEntries.map(e => e.equipType))]
-            const totalMiles = dayEntries.reduce((s, e) => s + e.miles, 0)
-            const totalHours = dayEntries.reduce((s, e) => s + e.hours, 0)
             const hasData = dayEntries.length > 0
             const isSelected = cell.inMonth && selectedDay === cell.day
-            const maxDots = 6
+            const maxNames = 4
+            const visibleEntries = dayEntries.slice(0, maxNames)
+            const overflowCount = dayEntries.length - visibleEntries.length
 
             return (
               <button
@@ -261,7 +276,7 @@ export default function EquipmentCalendar({ allRows, active }: Props) {
                 disabled={!cell.inMonth || !hasData}
                 className={`
                   relative flex flex-col items-stretch text-left border-b border-r border-gray-100 p-1.5
-                  h-24 sm:h-28
+                  h-28 sm:h-32
                   ${!cell.inMonth ? "bg-gray-50/40" : cell.isWeekend ? "bg-gray-50/60" : "bg-white"}
                   ${cell.inMonth && hasData ? "hover:bg-blue-50/60 cursor-pointer" : cell.inMonth ? "" : ""}
                   ${isSelected ? "ring-2 ring-inset ring-blue-400" : ""}
@@ -269,7 +284,7 @@ export default function EquipmentCalendar({ allRows, active }: Props) {
                   transition-colors
                 `}
               >
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-shrink-0">
                   <span
                     className={`text-xs leading-none w-5 h-5 flex items-center justify-center rounded-full font-medium
                       ${!cell.inMonth ? "text-gray-300" : cell.isToday ? "bg-blue-600 text-white" : "text-gray-700"}
@@ -283,26 +298,21 @@ export default function EquipmentCalendar({ allRows, active }: Props) {
                 </div>
 
                 {hasData && (
-                  <>
-                    <div className="flex flex-wrap gap-1 mt-1.5">
-                      {typesPresent.slice(0, maxDots).map(t => (
-                        <span
-                          key={t}
-                          title={t}
-                          className="w-2 h-2 rounded-sm flex-shrink-0"
-                          style={{ backgroundColor: typeColor(t) }}
-                        />
-                      ))}
-                      {typesPresent.length > maxDots && (
-                        <span className="text-[10px] text-gray-400">+{typesPresent.length - maxDots}</span>
-                      )}
-                    </div>
-                    <div className="mt-auto pt-1 text-[10px] leading-tight text-gray-400 truncate">
-                      {totalMiles > 0 && <span className="text-blue-600 font-medium">{totalMiles.toFixed(0)}mi</span>}
-                      {totalMiles > 0 && totalHours > 0 && <span className="mx-0.5">·</span>}
-                      {totalHours > 0 && <span className="text-green-600 font-medium">{totalHours.toFixed(1)}h</span>}
-                    </div>
-                  </>
+                  <div className="mt-1 flex-1 min-h-0 flex flex-col gap-0.5 overflow-hidden">
+                    {visibleEntries.map(e => (
+                      <div
+                        key={e.code}
+                        title={`${e.code} — ${e.desc}`}
+                        className="flex items-center gap-1 text-[10px] text-gray-700 leading-tight"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-sm flex-shrink-0" style={{ backgroundColor: typeColor(e.equipType) }} />
+                        <span className="truncate">{e.desc || e.code}</span>
+                      </div>
+                    ))}
+                    {overflowCount > 0 && (
+                      <span className="text-[10px] text-gray-400">+{overflowCount} more</span>
+                    )}
+                  </div>
                 )}
               </button>
             )
@@ -352,6 +362,9 @@ export default function EquipmentCalendar({ allRows, active }: Props) {
                   {e.operators.size > 0 && (
                     <div className="mt-1 text-xs text-gray-500">Op: {[...e.operators].join(", ")}</div>
                   )}
+                  {e.charges.size > 0 && (
+                    <div className="text-xs text-gray-500">Charge: {[...e.charges].join(", ")}</div>
+                  )}
                   {e.functions.size > 0 && (
                     <div className="text-xs text-gray-400">{[...e.functions].join(", ")}</div>
                   )}
@@ -365,7 +378,7 @@ export default function EquipmentCalendar({ allRows, active }: Props) {
         </>
       )}
 
-      {displayRows.length === 0 && (
+      {active.length === 0 && (
         <div className="mt-3 text-center text-sm text-gray-400">No equipment data for this period</div>
       )}
     </div>

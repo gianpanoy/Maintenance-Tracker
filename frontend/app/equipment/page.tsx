@@ -6,6 +6,7 @@ import { EquipRow } from "@/components/EquipRow"
 import EquipmentBarCharts from "@/components/EquipmentBarCharts"
 import EquipmentTable from "@/components/EquipmentTable"
 import EquipmentCalendar from "@/components/EquipmentCalendar"
+import EquipmentEntriesTable from "@/components/EquipmentEntriesTable"
 
 type LegendItem = { label: string; value: number; color: string; pct: number }
 type Tab = "charts" | "calendar"
@@ -123,6 +124,7 @@ export default function EquipmentDashboard() {
   const [equipType, setEquipType] = useState("")
   const [fnLegend, setFnLegend] = useState<LegendItem[]>([])
   const [tab, setTab] = useState<Tab>("charts")
+  const [calendarFocusDate, setCalendarFocusDate] = useState("")
 
   const active = useMemo(
     () => allRows.filter(r => selectedEquip.has(r.code)),
@@ -153,6 +155,7 @@ export default function EquipmentDashboard() {
     const finalRows = et ? rows.filter(r => r.equipType === et) : rows
     setAllRows(finalRows)
     setSelectedEquip(new Set(finalRows.map(r => r.code)))
+    setCalendarFocusDate(s || e || "")
   }
 
   useEffect(() => {
@@ -273,7 +276,15 @@ export default function EquipmentDashboard() {
 
       {/* Calendar tab */}
       {tab === "calendar" && (
-        <EquipmentCalendar allRows={allRows} active={active} />
+        <>
+          <EquipmentCalendar 
+            allRows={allRows}
+            active={active}
+            focusDate={calendarFocusDate} 
+          />
+          <EquipmentEntriesTable allRows={allRows} 
+        />
+      </>
       )}
     </div>
   )
