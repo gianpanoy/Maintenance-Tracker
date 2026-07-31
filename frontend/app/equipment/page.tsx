@@ -6,10 +6,11 @@ import { EquipRow } from "@/components/EquipRow"
 import EquipmentBarCharts from "@/components/EquipmentBarCharts"
 import EquipmentTable from "@/components/EquipmentTable"
 import EquipmentCalendar from "@/components/EquipmentCalendar"
-import EquipmentEntriesTable from "@/components/EquipmentEntriesTable"
+import dynamic from "next/dynamic"
+const EquipmentMap = dynamic(() => import("@/components/EquipmentMap"), { ssr: false })
 
 type LegendItem = { label: string; value: number; color: string; pct: number }
-type Tab = "charts" | "calendar"
+type Tab = "charts" | "calendar" | "map"
 
 const EQUIP_TYPE_MAP: Record<string, string> = {
   // ---------- Truck ----------
@@ -255,6 +256,12 @@ export default function EquipmentDashboard() {
         >
           Calendar
         </button>
+        <button
+          onClick={() => setTab("map")}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === "map" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+        >
+          Map
+        </button>
       </div>
 
       {/* Charts tab */}
@@ -276,15 +283,12 @@ export default function EquipmentDashboard() {
 
       {/* Calendar tab */}
       {tab === "calendar" && (
-        <>
-          <EquipmentCalendar 
-            allRows={allRows}
-            active={active}
-            focusDate={calendarFocusDate} 
-          />
-          <EquipmentEntriesTable allRows={allRows} 
-        />
-      </>
+        <EquipmentCalendar allRows={allRows} active={active} focusDate={calendarFocusDate} />
+      )}
+
+      {/* Map tab */}
+      {tab === "map" && (
+        <EquipmentMap active={active} />
       )}
     </div>
   )
