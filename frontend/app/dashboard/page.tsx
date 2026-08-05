@@ -32,7 +32,6 @@ export default function Dashboard() {
   const [crew, setCrew] = useState("")
   const [selectedDetail, setSelectedDetail] = useState<EmpRow | null>(null)
 
-  // active is the single source of truth — date/crew filtered + checkbox selected
   const active = allRows.filter(r => selectedEmps.has(r.name))
   const totalReg = active.reduce((s, r) => s + r.reg, 0)
   const totalOT = active.reduce((s, r) => s + r.ot, 0)
@@ -51,6 +50,30 @@ export default function Dashboard() {
     const rows = buildRows(filtered)
     setAllRows(rows)
     setSelectedEmps(new Set(rows.map(r => r.name)))
+  }
+
+ function applyQuickRange(months: number | "ytd") {
+    const now = new Date()
+    const fmt = (d: Date) => d.toISOString().slice(0, 10)
+    let s: string
+    let e: string
+
+    if (months === "ytd") {
+      s = fmt(new Date(now.getFullYear(), 0, 1))
+      e = fmt(new Date(now.getFullYear(), now.getMonth() + 1, 0))
+    } else {
+      // Start = first day of the month N months ago
+      const startMonth = now.getMonth() - (months as number) + 1
+      const start = new Date(now.getFullYear(), startMonth, 1)
+      // End = last day of current month
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+      s = fmt(start)
+      e = fmt(end)
+    }
+
+    setStartDate(s)
+    setEndDate(e)
+    applyFilters(rawData, s, e, crew)
   }
 
   useEffect(() => {
@@ -89,7 +112,9 @@ export default function Dashboard() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-4 mb-6 p-4 bg-white border border-gray-200 rounded-xl">
+      <div className="flex flex-wrap gap-3 mb-6 p-4 bg-white border border-gray-200 rounded-xl items-end">
+
+        {/* Date inputs */}
         <div className="flex flex-col gap-1">
           <label className="text-xs text-gray-600">Start date</label>
           <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-800" />
@@ -98,6 +123,8 @@ export default function Dashboard() {
           <label className="text-xs text-gray-600">End date</label>
           <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-800" />
         </div>
+
+        {/* Crew */}
         <div className="flex flex-col gap-1">
           <label className="text-xs text-gray-600">Crew</label>
           <select value={crew} onChange={e => setCrew(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-800">
@@ -105,10 +132,43 @@ export default function Dashboard() {
             {crews.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
-        <div className="flex items-end gap-2">
-          <button onClick={() => applyFilters(rawData, startDate, endDate, crew)} className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700">Apply</button>
-          <button onClick={() => { setStartDate(""); setEndDate(""); setCrew(""); applyFilters(rawData, "", "", "") }} className="border border-gray-800 bg-gray-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-gray-800">Reset</button>
-        </div>
+
+        {/* Divider */}
+        <div className="w-px h-8 bg-gray-200 mx-1" />
+
+        {/* Quick range buttons */}
+        {([3, 6, 9, 12] as number[]).map(m => (
+          <button
+            key={m}
+            onClick={() => applyQuickRange(m)}
+            className="border border-gray-300 bg-white text-gray-700 px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50"
+          >
+            {m}mo
+          </button>
+        ))}
+        <button
+          onClick={() => applyQuickRange("ytd")}
+          className="border border-gray-300 bg-white text-gray-700 px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50"
+        >
+          YTD
+        </button>
+
+        {/* Divider */}
+        <div className="w-px h-8 bg-gray-200 mx-1" />
+
+        {/* Apply / Reset */}
+        <button
+          onClick={() => applyFilters(rawData, startDate, endDate, crew)}
+          className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700"
+        >
+          Apply
+        </button>
+        <button
+          onClick={() => { setStartDate(""); setEndDate(""); setCrew(""); applyFilters(rawData, "", "", "") }}
+          className="border border-gray-800 bg-gray-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-gray-800"
+        >
+          Reset
+        </button>
       </div>
 
       {/* Metrics */}
@@ -121,7 +181,6 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* All charts receive the same `active` array */}
       <HoursDonutCharts active={active} />
       <HoursBarChart active={active} />
 
