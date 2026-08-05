@@ -158,6 +158,28 @@ export default function EquipmentDashboard() {
     setCalendarFocusDate(s || e || "")
   }
 
+  function applyQuickRange(months: number | "ytd") {
+    const now = new Date()
+    const fmt = (d: Date) => d.toISOString().slice(0, 10)
+    let s: string
+    let e: string
+
+    if (months === "ytd") {
+      s = fmt(new Date(now.getFullYear(), 0, 1))
+      e = fmt(new Date(now.getFullYear(), now.getMonth() + 1, 0))
+    } else {
+      const startMonth = now.getMonth() - (months as number) + 1
+      const start = new Date(now.getFullYear(), startMonth, 1)
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+      s = fmt(start)
+      e = fmt(end)
+    }
+
+    setStartDate(s)
+    setEndDate(e)
+    applyFilters(rawData, s, e, crew, equipType)
+  }
+
   useEffect(() => {
     const session_id = localStorage.getItem("equipment_session_id")
     if (!session_id) { router.push("/upload"); return }
@@ -217,6 +239,26 @@ export default function EquipmentDashboard() {
             {equipTypes.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
+        {/* Quick range */}
+        <div className="flex items-end gap-2">
+          <div className="w-px h-8 bg-gray-200" />
+          {([3, 6, 9, 12] as number[]).map(m => (
+            <button
+              key={m}
+              onClick={() => applyQuickRange(m)}
+              className="border border-gray-300 bg-white text-gray-700 px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50"
+            >
+              {m}mo
+            </button>
+          ))}
+          <button
+            onClick={() => applyQuickRange("ytd")}
+            className="border border-gray-300 bg-white text-gray-700 px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50"
+          >
+            YTD
+          </button>
+          <div className="w-px h-8 bg-gray-200" />
+        </div>
         <div className="flex items-end gap-2">
           <button onClick={() => applyFilters(rawData, startDate, endDate, crew, equipType)} className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700">Apply</button>
           <button onClick={() => {
@@ -224,6 +266,7 @@ export default function EquipmentDashboard() {
             applyFilters(rawData, "", "", "", "")
           }} className="border border-gray-800 bg-gray-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-gray-800">Reset</button>
         </div>
+      
       </div>
 
       {/* Metrics */}

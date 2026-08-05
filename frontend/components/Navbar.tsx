@@ -23,7 +23,7 @@ export default function Navbar() {
           {/* Logo Section */}
           <div className="flex-shrink-0">
             <Link href="/" className="text-xl font-bold tracking-wider">
-              HWY-K Maintenance Tracker
+              HWY-K Maintenance Tracke TEST
             </Link>
           </div>
 
