@@ -12,7 +12,7 @@ export default function Navbar() {
     { name: "Home", href: "/" },
     { name: "Employees", href: "/dashboard" },
     { name: "Equipment", href: "/equipment" },
-    { name: "Account", href: "/account" },
+    { name: "Contact", href: "/contact" },
   ];
 
   return (
@@ -23,7 +23,7 @@ export default function Navbar() {
           {/* Logo Section */}
           <div className="flex-shrink-0">
             <Link href="/" className="text-xl font-bold tracking-wider">
-              HWY-K Maintenance Tracke TEST
+              HWY-K Maintenance Tracker
             </Link>
           </div>
 
