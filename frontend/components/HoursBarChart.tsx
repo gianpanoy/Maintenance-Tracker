@@ -27,8 +27,29 @@ function buildStackData(active: EmpRow[], tab: BarTab) {
   })
 }
 
+// Shared tooltip helpers
+function showTooltip(tooltipEl: HTMLDivElement | null, event: MouseEvent, html: string) {
+  if (!tooltipEl) return
+  d3.select(tooltipEl)
+    .style("opacity", 1)
+    .style("left", `${event.clientX + 14}px`)
+    .style("top", `${event.clientY - 12}px`)
+    .html(html)
+}
+function moveTooltip(tooltipEl: HTMLDivElement | null, event: MouseEvent) {
+  if (!tooltipEl) return
+  d3.select(tooltipEl)
+    .style("left", `${event.clientX + 14}px`)
+    .style("top", `${event.clientY - 12}px`)
+}
+function hideTooltip(tooltipEl: HTMLDivElement | null) {
+  if (!tooltipEl) return
+  d3.select(tooltipEl).style("opacity", 0)
+}
+
 function useVerticalBar(
   scrollRef: React.RefObject<HTMLDivElement | null>,
+  tooltipRef: React.RefObject<HTMLDivElement | null>,
   active: EmpRow[],
   sortKey: SortKey,
   tab: BarTab,
@@ -68,6 +89,7 @@ function useVerticalBar(
     })
 
     const sortedStack = sorted.map(r => fullStack.find(d => d.name === r.name)!)
+    const totalByName = new Map(sorted.map(r => [r.name, r.reg + r.ot + r.leaveHrs]))
 
     const maxCapacity = d3.max(active, r => r.reg + r.leaveHrs) || 0
     const showCapacityLine = sortKey === "regular" || sortKey === "ot" || sortKey === "total"
@@ -128,16 +150,76 @@ function useVerticalBar(
     const xScale = d3.scaleBand().domain(sorted.map(r => r.name)).range([0, chartW]).padding(0.3)
     const stack = d3.stack<any>().keys(visibleKeys).value((d, k) => (d as any)[k] || 0)
 
+    // Per-employee highlight wash — appended before the bars so it sits behind them.
+    // Toggled by the hover-capture overlay below, not hovered directly.
+    const highlightRect = g.append("rect")
+      .attr("class", "hover-highlight")
+      .attr("y", 0)
+      .attr("height", chartH)
+      .attr("fill", "#111827")
+      .attr("opacity", 0)
+      .attr("pointer-events", "none")
+
     g.selectAll("g.layer")
       .data(stack(sortedStack)).join("g")
       .attr("class", "layer")
       .attr("fill", d => colorMap[d.key] || "#ccc")
-      .selectAll("rect").data(d => d).join("rect")
-      .attr("x", (_, i) => xScale(sorted[i].name)!)
-      .attr("y", d => yScale(d[1]))
-      .attr("height", d => yScale(d[0]) - yScale(d[1]))
+      .each(function (series) {
+        const key = series.key
+        const baseColor = colorMap[key] || "#ccc"
+        d3.select(this).selectAll("rect").data(series).join("rect")
+          .attr("x", (_, i) => xScale(sorted[i].name)!)
+          .attr("y", d => yScale(d[1]))
+          .attr("height", d => yScale(d[0]) - yScale(d[1]))
+          .attr("width", xScale.bandwidth())
+          .attr("rx", 2)
+          .attr("pointer-events", "none") // hover is handled by the full-column overlay instead
+      })
+
+    // Full-column hover overlay — one invisible rect per employee spanning the whole
+    // bar height, so hovering anywhere on their column shows every category at once
+    // rather than whatever thin segment the cursor happens to land on.
+    g.selectAll("rect.hover-target")
+      .data(sorted).join("rect")
+      .attr("class", "hover-target")
+      .attr("x", d => xScale(d.name)!)
+      .attr("y", 0)
       .attr("width", xScale.bandwidth())
-      .attr("rx", 2)
+      .attr("height", chartH)
+      .attr("fill", "transparent")
+      .style("cursor", "pointer")
+      .on("mouseover", function (event, d) {
+        highlightRect
+          .attr("x", xScale(d.name)!)
+          .attr("width", xScale.bandwidth())
+          .attr("opacity", 0.06)
+
+        const row = sortedStack.find(s => s.name === d.name)!
+        const total = totalByName.get(d.name) ?? 0
+        const lines = visibleKeys
+          .map(key => ({ key, value: (row as any)[key] || 0 }))
+          .filter(({ value }) => value > 0)
+          .map(({ key, value }) => `
+            <div class="flex items-center gap-1.5">
+              <span class="inline-block w-2 h-2 rounded-sm flex-shrink-0" style="background:${colorMap[key] || '#ccc'}"></span>
+              <span class="text-gray-600">${key}:</span>
+              <span class="text-gray-900 font-medium">${value.toFixed(2)} hrs</span>
+            </div>`)
+          .join("")
+
+        showTooltip(
+          tooltipRef.current,
+          event,
+          `<div class="font-medium text-gray-900 mb-1">${d.name}</div>
+           ${lines || '<div class="text-gray-400">No hours recorded</div>'}
+           <div class="text-gray-400 mt-1 pt-1 border-t border-gray-100">Total: ${total.toFixed(2)} hrs</div>`
+        )
+      })
+      .on("mousemove", (event) => moveTooltip(tooltipRef.current, event))
+      .on("mouseout", function () {
+        highlightRect.attr("opacity", 0)
+        hideTooltip(tooltipRef.current)
+      })
 
     // Max capacity line — only for hours sorts
     if (showCapacityLine) {
@@ -177,7 +259,7 @@ function useVerticalBar(
     scrollArea.appendChild(barSvg.node()!)
     wrapper.appendChild(scrollArea)
     container.appendChild(wrapper)
-  }, [active, sortKey, tab, hidden, colorMap])
+  }, [active, sortKey, tab, hidden, colorMap, tooltipRef])
 }
 
 interface Props {
@@ -194,6 +276,7 @@ export default function HoursBarChart({ active }: Props) {
   useEffect(() => { allKeysRef.current = allKeys }, [allKeys])
 
   const barContainerRef = useRef<HTMLDivElement>(null)
+  const tooltipRef = useRef<HTMLDivElement>(null)
 
   const leaveTypes = useMemo(() =>
     [...new Set(active.flatMap(r => [...r.leaveTypes]))].sort(),
@@ -242,10 +325,16 @@ export default function HoursBarChart({ active }: Props) {
 
   const showCapacityLine = sortKey === "regular" || sortKey === "ot" || sortKey === "total"
 
-  useVerticalBar(barContainerRef, active, sortKey, barTab, hidden, colorMap, setAllKeys)
+  useVerticalBar(barContainerRef, tooltipRef, active, sortKey, barTab, hidden, colorMap, setAllKeys)
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4">
+      {/* Hover tooltip — shows exact figures for the segment under the cursor */}
+      <div
+        ref={tooltipRef}
+        className="fixed pointer-events-none opacity-0 transition-opacity duration-100 bg-white border border-gray-200 shadow-lg rounded-lg px-3 py-2 text-xs z-50"
+      />
+
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
         <div className="text-sm font-medium text-gray-800">Hours per Employee</div>
         <div className="flex flex-wrap items-center gap-3">

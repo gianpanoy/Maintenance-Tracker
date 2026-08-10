@@ -1,4 +1,4 @@
-#!/Users/gianpanoy/Documents/GitHub/Maintenance-Tracker/backend/venv/bin/python
+#!/Users/gianpanoy/Documents/GitHub/Maintenance-Tracker/backend/venv/bin/python3
 # -*- coding: utf-8 -*-
 import re
 import sys
