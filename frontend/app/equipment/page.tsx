@@ -6,14 +6,12 @@ import { EquipRow } from "@/components/EquipRow"
 import EquipmentBarCharts from "@/components/EquipmentBarCharts"
 import EquipmentTable from "@/components/EquipmentTable"
 import EquipmentCalendar from "@/components/EquipmentCalendar"
-import dynamic from "next/dynamic"
-const EquipmentMap = dynamic(() => import("@/components/EquipmentMap"), { ssr: false })
+import EquipmentMap from "@/components/EquipmentMap"
 
 type LegendItem = { label: string; value: number; color: string; pct: number }
 type Tab = "charts" | "calendar" | "map"
 
 const EQUIP_TYPE_MAP: Record<string, string> = {
-  // ---------- Truck ----------
   "UTILITY TRUCK": "Truck",
   "HOOK LIFT": "Truck",
   "TANK TRUCK": "Truck",
@@ -29,40 +27,28 @@ const EQUIP_TYPE_MAP: Record<string, string> = {
   "F250": "Truck",
   "F350": "Truck",
   "F450": "Truck",
- 
-  // ---------- Van ----------
   "PASSENGER VAN": "Van",
   "VAN": "Van",
- 
-  // ---------- Tractor / Mower ----------
   "GUARDRAIL MOWER": "Tractor/Mower",
   "ZERO TURN": "Tractor/Mower",
   "ROTARY": "Tractor/Mower",
   "MOWER": "Tractor/Mower",
   "TRACTOR": "Tractor/Mower",
- 
-  // ---------- Compact ----------
   "MINI EXCAVATOR": "Compact",
   "TRACKLOADER": "Compact",
   "TRACK LOADER": "Compact",
   "SKIDSTEER": "Compact",
   "SKID STEER": "Compact",
   "COMPACT": "Compact",
-
-  // ---------- Heavy Equipment ----------
   "BACKHOE": "Heavy Equipment",
   "EXCAVATOR": "Heavy Equipment",
   "LOADER": "Heavy Equipment",
   "GRADER": "Heavy Equipment",
   "ROLLER": "Heavy Equipment",
   "CRANE": "Heavy Equipment",
-
-  // ---------- Trailer ----------
   "LOWBOY": "Trailer",
   "BOAT TRAILER": "Trailer",
   "TRAILER": "Trailer",
-
-  // ---------- Support Equipment ----------
   "MESSAGE BOARD": "Support Equipment",
   "WANCO": "Support Equipment",
   "CHIPPER": "Support Equipment",
@@ -194,7 +180,6 @@ export default function EquipmentDashboard() {
         </button>
       </div>
 
-      {/* Filters */}
       <div className="flex flex-wrap gap-4 mb-6 p-4 bg-white border border-gray-200 rounded-xl">
         <div className="flex flex-col gap-1">
           <label className="text-xs text-gray-600">Start date</label>
@@ -227,7 +212,6 @@ export default function EquipmentDashboard() {
         </div>
       </div>
 
-      {/* Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         {[
           ["Selected vehicles", totalVehicles],
@@ -242,7 +226,6 @@ export default function EquipmentDashboard() {
         ))}
       </div>
 
-      {/* Tab switcher */}
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-6 w-fit">
         <button
           onClick={() => setTab("charts")}
@@ -264,7 +247,6 @@ export default function EquipmentDashboard() {
         </button>
       </div>
 
-      {/* Charts tab */}
       {tab === "charts" && (
         <>
           <EquipmentBarCharts
@@ -281,12 +263,10 @@ export default function EquipmentDashboard() {
         </>
       )}
 
-      {/* Calendar tab */}
       {tab === "calendar" && (
         <EquipmentCalendar allRows={allRows} active={active} focusDate={calendarFocusDate} />
       )}
 
-      {/* Map tab */}
       {tab === "map" && (
         <EquipmentMap active={active} />
       )}
