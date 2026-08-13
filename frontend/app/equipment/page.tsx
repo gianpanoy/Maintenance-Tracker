@@ -6,12 +6,14 @@ import { EquipRow } from "@/components/EquipRow"
 import EquipmentBarCharts from "@/components/EquipmentBarCharts"
 import EquipmentTable from "@/components/EquipmentTable"
 import EquipmentCalendar from "@/components/EquipmentCalendar"
-import EquipmentMap from "@/components/EquipmentMap"
+import dynamic from "next/dynamic"
+const EquipmentMap = dynamic(() => import("@/components/EquipmentMap"), { ssr: false })
 
 type LegendItem = { label: string; value: number; color: string; pct: number }
 type Tab = "charts" | "calendar" | "map"
 
 const EQUIP_TYPE_MAP: Record<string, string> = {
+  // ---------- Truck ----------
   "UTILITY TRUCK": "Truck",
   "HOOK LIFT": "Truck",
   "TANK TRUCK": "Truck",
@@ -27,28 +29,40 @@ const EQUIP_TYPE_MAP: Record<string, string> = {
   "F250": "Truck",
   "F350": "Truck",
   "F450": "Truck",
+ 
+  // ---------- Van ----------
   "PASSENGER VAN": "Van",
   "VAN": "Van",
+ 
+  // ---------- Tractor / Mower ----------
   "GUARDRAIL MOWER": "Tractor/Mower",
   "ZERO TURN": "Tractor/Mower",
   "ROTARY": "Tractor/Mower",
   "MOWER": "Tractor/Mower",
   "TRACTOR": "Tractor/Mower",
+ 
+  // ---------- Compact ----------
   "MINI EXCAVATOR": "Compact",
   "TRACKLOADER": "Compact",
   "TRACK LOADER": "Compact",
   "SKIDSTEER": "Compact",
   "SKID STEER": "Compact",
   "COMPACT": "Compact",
+
+  // ---------- Heavy Equipment ----------
   "BACKHOE": "Heavy Equipment",
   "EXCAVATOR": "Heavy Equipment",
   "LOADER": "Heavy Equipment",
   "GRADER": "Heavy Equipment",
   "ROLLER": "Heavy Equipment",
   "CRANE": "Heavy Equipment",
+
+  // ---------- Trailer ----------
   "LOWBOY": "Trailer",
   "BOAT TRAILER": "Trailer",
   "TRAILER": "Trailer",
+
+  // ---------- Support Equipment ----------
   "MESSAGE BOARD": "Support Equipment",
   "WANCO": "Support Equipment",
   "CHIPPER": "Support Equipment",
@@ -143,28 +157,9 @@ export default function EquipmentDashboard() {
     setAllRows(finalRows)
     setSelectedEquip(new Set(finalRows.map(r => r.code)))
     setCalendarFocusDate(s || e || "")
-  }
-
-  function applyQuickRange(months: number | "ytd") {
-    const now = new Date()
-    const fmt = (d: Date) => d.toISOString().slice(0, 10)
-    let s: string
-    let e: string
-
-    if (months === "ytd") {
-      s = fmt(new Date(now.getFullYear(), 0, 1))
-      e = fmt(new Date(now.getFullYear(), now.getMonth() + 1, 0))
-    } else {
-      const startMonth = now.getMonth() - (months as number) + 1
-      const start = new Date(now.getFullYear(), startMonth, 1)
-      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-      s = fmt(start)
-      e = fmt(end)
-    }
-
-    setStartDate(s)
-    setEndDate(e)
-    applyFilters(rawData, s, e, crew, equipType)
+    localStorage.setItem("shared_filter_start", s)
+    localStorage.setItem("shared_filter_end", e)
+    localStorage.setItem("shared_filter_crew", c)
   }
 
   useEffect(() => {
@@ -197,11 +192,17 @@ export default function EquipmentDashboard() {
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-medium">Equipment Dashboard</h1>
-        <button onClick={() => router.push("/upload")} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
-          Upload new file
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => router.push("/map")} className="border border-gray-300 bg-white text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
+            Combined Map
+          </button>
+          <button onClick={() => router.push("/upload")} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
+            Upload new file
+          </button>
+        </div>
       </div>
 
+      {/* Filters */}
       <div className="flex flex-wrap gap-4 mb-6 p-4 bg-white border border-gray-200 rounded-xl">
         <div className="flex flex-col gap-1">
           <label className="text-xs text-gray-600">Start date</label>
@@ -225,26 +226,6 @@ export default function EquipmentDashboard() {
             {equipTypes.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
-        {/* Quick range */}
-        <div className="flex items-end gap-2">
-          <div className="w-px h-8 bg-gray-200" />
-          {([3, 6, 9, 12] as number[]).map(m => (
-            <button
-              key={m}
-              onClick={() => applyQuickRange(m)}
-              className="border border-gray-300 bg-white text-gray-700 px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50"
-            >
-              {m}mo
-            </button>
-          ))}
-          <button
-            onClick={() => applyQuickRange("ytd")}
-            className="border border-gray-300 bg-white text-gray-700 px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50"
-          >
-            YTD
-          </button>
-          <div className="w-px h-8 bg-gray-200" />
-        </div>
         <div className="flex items-end gap-2">
           <button onClick={() => applyFilters(rawData, startDate, endDate, crew, equipType)} className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700">Apply</button>
           <button onClick={() => {
@@ -252,9 +233,9 @@ export default function EquipmentDashboard() {
             applyFilters(rawData, "", "", "", "")
           }} className="border border-gray-800 bg-gray-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-gray-800">Reset</button>
         </div>
-      
       </div>
 
+      {/* Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         {[
           ["Selected vehicles", totalVehicles],
@@ -269,6 +250,7 @@ export default function EquipmentDashboard() {
         ))}
       </div>
 
+      {/* Tab switcher */}
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-6 w-fit">
         <button
           onClick={() => setTab("charts")}
@@ -290,6 +272,7 @@ export default function EquipmentDashboard() {
         </button>
       </div>
 
+      {/* Charts tab */}
       {tab === "charts" && (
         <>
           <EquipmentBarCharts
@@ -306,10 +289,12 @@ export default function EquipmentDashboard() {
         </>
       )}
 
+      {/* Calendar tab */}
       {tab === "calendar" && (
         <EquipmentCalendar allRows={allRows} active={active} focusDate={calendarFocusDate} />
       )}
 
+      {/* Map tab */}
       {tab === "map" && (
         <EquipmentMap active={active} />
       )}

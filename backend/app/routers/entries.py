@@ -48,6 +48,7 @@ async def upload_file(file: UploadFile = File(...), type: Optional[str] = Form(N
         "Date", "Crew Code", "Employee ID", "Employee Name",
         "Hours, Regular", "Hours, Overtime",
         "Leave Description", "Leave Hours",
+        "Charge Code", "Charge Description",
         "Mile Marker, From", "Mile Marker, To",
     ]].copy()
 

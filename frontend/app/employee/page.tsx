@@ -50,6 +50,9 @@ export default function Dashboard() {
     const rows = buildRows(filtered)
     setAllRows(rows)
     setSelectedEmps(new Set(rows.map(r => r.name)))
+    localStorage.setItem("shared_filter_start", s)
+    localStorage.setItem("shared_filter_end", e)
+    localStorage.setItem("shared_filter_crew", c)
   }
 
  function applyQuickRange(months: number | "ytd") {
@@ -106,9 +109,14 @@ export default function Dashboard() {
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-medium">Employee Dashboard</h1>
-        <button onClick={() => router.push("/upload")} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
-          Upload new file
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => router.push("/map")} className="border border-gray-300 bg-white text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
+            Combined Map
+          </button>
+          <button onClick={() => router.push("/upload")} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
+            Upload new file
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
