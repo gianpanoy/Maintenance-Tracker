@@ -162,9 +162,33 @@ export default function EquipmentDashboard() {
     localStorage.setItem("shared_filter_crew", c)
   }
 
+  function applyQuickRange(months: number | "ytd") {
+    const now = new Date()
+    const fmt = (d: Date) => d.toISOString().slice(0, 10)
+    let s: string
+    let e: string
+
+    if (months === "ytd") {
+      s = fmt(new Date(now.getFullYear(), 0, 1))
+      e = fmt(new Date(now.getFullYear(), now.getMonth() + 1, 0))
+    } else {
+      // Start = first day of the month N months ago
+      const startMonth = now.getMonth() - (months as number) + 1
+      const start = new Date(now.getFullYear(), startMonth, 1)
+      // End = last day of current month
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+      s = fmt(start)
+      e = fmt(end)
+    }
+
+    setStartDate(s)
+    setEndDate(e)
+    applyFilters(rawData, s, e, crew, equipType)
+  }
+
   useEffect(() => {
     const session_id = localStorage.getItem("equipment_session_id")
-    if (!session_id) { router.push("/upload"); return }
+    if (!session_id) { router.push("/"); return }
     axios.get(`http://localhost:8000/api/session/equipment/${session_id}`)
       .then(res => {
         const data = res.data.raw || []
@@ -172,7 +196,7 @@ export default function EquipmentDashboard() {
         setCrews([...new Set<string>(data.map((r: any) => r["Crew Code"]).filter(Boolean))].sort())
         applyFilters(data, "", "", "", "")
       })
-      .catch(() => router.push("/upload"))
+      .catch(() => router.push("/"))
   }, [])
 
   function toggleEquip(code: string, checked: boolean) {
@@ -190,49 +214,68 @@ export default function EquipmentDashboard() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-medium">Equipment Dashboard</h1>
+      <div className="flex items-center justify-between mb-6 ">
+        <h1 className="text-2xl font-bold">Equipment Dashboard</h1>
         <div className="flex items-center gap-2">
           <button onClick={() => router.push("/map")} className="border border-gray-300 bg-white text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
             Combined Map
           </button>
-          <button onClick={() => router.push("/upload")} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
+          <button onClick={() => router.push("/")} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
             Upload new file
           </button>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-4 mb-6 p-4 bg-white border border-gray-200 rounded-xl">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-gray-600">Start date</label>
-          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-800" />
+      <div className="flex flex-nowrap items-end gap-2 mb-6 p-3 bg-white border border-gray-200 rounded-xl overflow-x-auto">
+        <div className="flex flex-col gap-0.5 flex-shrink-0">
+          <label className="text-[10px] text-gray-500">Start date</label>
+          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-gray-800" />
         </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-gray-600">End date</label>
-          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-800" />
+        <div className="flex flex-col gap-0.5 flex-shrink-0">
+          <label className="text-[10px] text-gray-500">End date</label>
+          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-gray-800" />
         </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-gray-600">Crew</label>
-          <select value={crew} onChange={e => setCrew(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-800">
+        <div className="flex flex-col gap-0.5 flex-shrink-0">
+          <label className="text-[10px] text-gray-500">Crew</label>
+          <select value={crew} onChange={e => setCrew(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-gray-800 w-24">
             <option value="">All crews</option>
             {crews.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-gray-600">Equipment type</label>
-          <select value={equipType} onChange={e => setEquipType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-800">
+        <div className="flex flex-col gap-0.5 flex-shrink-0">
+          <label className="text-[10px] text-gray-500">Equipment type</label>
+          <select value={equipType} onChange={e => setEquipType(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-gray-800 w-32">
             <option value="">All types</option>
             {equipTypes.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
-        <div className="flex items-end gap-2">
-          <button onClick={() => applyFilters(rawData, startDate, endDate, crew, equipType)} className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700">Apply</button>
-          <button onClick={() => {
-            setStartDate(""); setEndDate(""); setCrew(""); setEquipType("")
+
+        <div className="w-px h-6 bg-gray-200 flex-shrink-0" />
+
+        {([3, 6, 9, 12] as number[]).map(m => (
+          <button
+            key={m}
+            onClick={() => applyQuickRange(m)}
+            className="flex-shrink-0 border border-gray-300 bg-white text-gray-700 px-2 py-1 rounded-lg text-xs hover:bg-gray-50"
+          >
+            {m}mo
+          </button>
+        ))}
+        <button
+          onClick={() => applyQuickRange("ytd")}
+          className="flex-shrink-0 border border-gray-300 bg-white text-gray-700 px-2 py-1 rounded-lg text-xs hover:bg-gray-50"
+        >
+          YTD
+        </button>
+
+        <div className="w-px h-6 bg-gray-200 flex-shrink-0" />
+
+        <button onClick={() => applyFilters(rawData, startDate, endDate, crew, equipType)} className="flex-shrink-0 bg-blue-600 text-white px-3 py-1 rounded-lg text-xs hover:bg-blue-700">Apply</button>
+        <button onClick={() => {
+          setStartDate(""); setEndDate(""); setCrew(""); setEquipType("")
             applyFilters(rawData, "", "", "", "")
-          }} className="border border-gray-800 bg-gray-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-gray-800">Reset</button>
-        </div>
+          }} className="flex-shrink-0 border border-gray-800 bg-gray-600 text-white px-3 py-1 rounded-lg text-xs hover:bg-gray-800">Reset</button>
       </div>
 
       {/* Metrics */}

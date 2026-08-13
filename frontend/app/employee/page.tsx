@@ -81,7 +81,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     const session_id = localStorage.getItem("session_id")
-    if (!session_id) { router.push("/upload"); return }
+    if (!session_id) { router.push("/"); return }
     axios.get(`http://localhost:8000/api/session/${session_id}`)
       .then(res => {
         const data = res.data.raw || []
@@ -89,7 +89,7 @@ export default function Dashboard() {
         setCrews([...new Set<string>(data.map((r: any) => r["Crew Code"]).filter(Boolean))].sort())
         applyFilters(data, "", "", "")
       })
-      .catch(() => router.push("/upload"))
+      .catch(() => router.push("/"))
   }, [])
 
   function toggleEmp(name: string, checked: boolean) {
@@ -108,12 +108,12 @@ export default function Dashboard() {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-medium">Employee Dashboard</h1>
+        <h1 className="text-2xl font-bold">Employee Dashboard</h1>
         <div className="flex items-center gap-2">
           <button onClick={() => router.push("/map")} className="border border-gray-300 bg-white text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
             Combined Map
           </button>
-          <button onClick={() => router.push("/upload")} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
+          <button onClick={() => router.push("/")} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
             Upload new file
           </button>
         </div>
