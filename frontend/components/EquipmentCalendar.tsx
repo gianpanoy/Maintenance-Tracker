@@ -302,9 +302,6 @@ export default function EquipmentCalendar({ active, focusDate }: Props) {
             const dayEntries = cell.inMonth ? Object.values(usageByDay[cell.day] || {}) : []
             const hasData = dayEntries.length > 0
             const isSelected = cell.inMonth && selectedDay === cell.day
-            const maxNames = 4
-            const visibleEntries = dayEntries.slice(0, maxNames)
-            const overflowCount = dayEntries.length - visibleEntries.length
 
             return (
               <button
@@ -313,7 +310,7 @@ export default function EquipmentCalendar({ active, focusDate }: Props) {
                 disabled={!cell.inMonth || !hasData}
                 className={`
                   relative flex flex-col items-stretch text-left border-b border-r border-gray-100 p-1.5
-                  h-28 sm:h-32
+                  h-32 sm:h-40
                   ${!cell.inMonth ? "bg-gray-50/40" : cell.isWeekend ? "bg-gray-50/60" : "bg-white"}
                   ${cell.inMonth && hasData ? "hover:bg-blue-50/60 cursor-pointer" : cell.inMonth ? "" : ""}
                   ${isSelected ? "ring-2 ring-inset ring-blue-400" : ""}
@@ -335,20 +332,17 @@ export default function EquipmentCalendar({ active, focusDate }: Props) {
                 </div>
 
                 {hasData && (
-                  <div className="mt-1 flex-1 min-h-0 flex flex-col gap-0.5 overflow-hidden">
-                    {visibleEntries.map(e => (
+                  <div className="mt-1 flex-1 min-h-0 flex flex-col gap-1 overflow-y-auto">
+                    {dayEntries.map(e => (
                       <div
                         key={e.code}
                         title={`${e.code} — ${e.desc}`}
-                        className="flex items-center gap-1 text-[10px] text-gray-700 leading-tight"
+                        className="flex items-center gap-1.5 text-xs text-gray-700 leading-tight"
                       >
-                        <span className="w-1.5 h-1.5 rounded-sm flex-shrink-0" style={{ backgroundColor: typeColor(e.equipType) }} />
+                        <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ backgroundColor: typeColor(e.equipType) }} />
                         <span className="truncate">{e.code} {e.desc}</span>
                       </div>
                     ))}
-                    {overflowCount > 0 && (
-                      <span className="text-[10px] text-gray-400">+{overflowCount} more</span>
-                    )}
                   </div>
                 )}
               </button>
