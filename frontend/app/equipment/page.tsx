@@ -1,16 +1,15 @@
 "use client"
-import { useEffect, useState, useMemo } from "react"
+import { useEffect, useRef, useState, useMemo } from "react"
+import { createPortal } from "react-dom"
 import { useRouter } from "next/navigation"
 import axios from "axios"
 import { EquipRow } from "@/components/EquipRow"
 import EquipmentBarCharts from "@/components/EquipmentBarCharts"
 import EquipmentTable from "@/components/EquipmentTable"
 import EquipmentCalendar from "@/components/EquipmentCalendar"
-import dynamic from "next/dynamic"
-const EquipmentMap = dynamic(() => import("@/components/EquipmentMap"), { ssr: false })
 
 type LegendItem = { label: string; value: number; color: string; pct: number }
-type Tab = "charts" | "calendar" | "map"
+type Tab = "charts" | "calendar"
 
 const EQUIP_TYPE_MAP: Record<string, string> = {
   // ---------- Truck ----------
@@ -119,10 +118,20 @@ export default function EquipmentDashboard() {
   const [allRows, setAllRows] = useState<EquipRow[]>([])
   const [selectedEquip, setSelectedEquip] = useState<Set<string>>(new Set())
   const [crews, setCrews] = useState<string[]>([])
+  const [selectedFunctions, setSelectedFunctions] = useState<Set<string>>(new Set())
+  const [functionDropdownOpen, setFunctionDropdownOpen] = useState(false)
+  const functionButtonRef = useRef<HTMLButtonElement>(null)
+  const functionPanelRef = useRef<HTMLDivElement>(null)
+  const [functionDropdownPos, setFunctionDropdownPos] = useState<{ top: number; left: number } | null>(null)
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
   const [crew, setCrew] = useState("")
-  const [equipType, setEquipType] = useState("")
+  const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set())
+  const [onSiteOnly, setOnSiteOnly] = useState(false)
+  const [typeDropdownOpen, setTypeDropdownOpen] = useState(false)
+  const typeButtonRef = useRef<HTMLButtonElement>(null)
+  const typePanelRef = useRef<HTMLDivElement>(null)
+  const [typeDropdownPos, setTypeDropdownPos] = useState<{ top: number; left: number } | null>(null)
   const [fnLegend, setFnLegend] = useState<LegendItem[]>([])
   const [tab, setTab] = useState<Tab>("charts")
   const [calendarFocusDate, setCalendarFocusDate] = useState("")
@@ -137,12 +146,39 @@ export default function EquipmentDashboard() {
     [allRows]
   )
 
+  // Function code options are scoped to the currently selected equipment
+  // type(s) — computed per raw row (getEquipType is a pure function of the
+  // description string, so this doesn't need buildRows/aggregation at all).
+  // No types selected means no type-based restriction (all functions shown).
+  const functionOptions = useMemo(() => {
+    const set = new Set<string>()
+    rawData.forEach((r: any) => {
+      if (selectedTypes.size > 0) {
+        const rowType = getEquipType(String(r["Equipment Description"] || ""))
+        if (!selectedTypes.has(rowType)) return
+      }
+      const fn = String(r["Function Description"] || "").trim()
+      if (fn) set.add(fn)
+    })
+    return [...set].sort()
+  }, [rawData, selectedTypes])
+
+  // If narrowing equipment types drops a previously-selected function code
+  // out of the available list, drop it from the selection too rather than
+  // leaving a phantom filter active that no longer corresponds to anything.
+  useEffect(() => {
+    setSelectedFunctions(prev => {
+      const filtered = new Set([...prev].filter(f => functionOptions.includes(f)))
+      return filtered.size === prev.size ? prev : filtered
+    })
+  }, [functionOptions])
+
   const totalMiles = useMemo(() => active.reduce((s, r) => s + r.totalMiles, 0), [active])
   const totalHours = useMemo(() => active.reduce((s, r) => s + r.totalHours, 0), [active])
   const totalDays = useMemo(() => new Set(active.flatMap(r => [...r.daysUsed])).size, [active])
   const totalVehicles = active.length
 
-  function applyFilters(data: any[], s: string, e: string, c: string, et: string) {
+  function applyFilters(data: any[], s: string, e: string, c: string, types: Set<string>, onSite: boolean, functions: Set<string>) {
     const sf = s.replace(/-/g, "")
     const ef = e.replace(/-/g, "")
     const filtered = data.filter((r: any) => {
@@ -150,10 +186,12 @@ export default function EquipmentDashboard() {
       if (sf && d < sf) return false
       if (ef && d > ef) return false
       if (c && r["Crew Code"] !== c) return false
+      if (onSite && String(r["Charge Code"] || "").trim().startsWith("8")) return false
+      if (functions.size > 0 && !functions.has(String(r["Function Description"] || "").trim())) return false
       return true
     })
     const rows = buildRows(filtered)
-    const finalRows = et ? rows.filter(r => r.equipType === et) : rows
+    const finalRows = types.size > 0 ? rows.filter(r => types.has(r.equipType)) : rows
     setAllRows(finalRows)
     setSelectedEquip(new Set(finalRows.map(r => r.code)))
     setCalendarFocusDate(s || e || "")
@@ -183,20 +221,81 @@ export default function EquipmentDashboard() {
 
     setStartDate(s)
     setEndDate(e)
-    applyFilters(rawData, s, e, crew, equipType)
+    applyFilters(rawData, s, e, crew, selectedTypes, onSiteOnly, selectedFunctions)
   }
+
+  function toggleOnSite() {
+    const next = !onSiteOnly
+    setOnSiteOnly(next)
+    applyFilters(rawData, startDate, endDate, crew, selectedTypes, next, selectedFunctions)
+  }
+
+  function toggleType(t: string) {
+    setSelectedTypes(prev => {
+      const next = new Set(prev)
+      if (next.has(t)) next.delete(t)
+      else next.add(t)
+      return next
+    })
+  }
+
+  function toggleFunction(f: string) {
+    setSelectedFunctions(prev => {
+      const next = new Set(prev)
+      if (next.has(f)) next.delete(f)
+      else next.add(f)
+      return next
+    })
+  }
+
+  function openTypeDropdown() {
+    if (typeButtonRef.current) {
+      const rect = typeButtonRef.current.getBoundingClientRect()
+      setTypeDropdownPos({ top: rect.bottom + 4, left: rect.left })
+    }
+    setTypeDropdownOpen(o => !o)
+  }
+
+  function openFunctionDropdown() {
+    if (functionButtonRef.current) {
+      const rect = functionButtonRef.current.getBoundingClientRect()
+      setFunctionDropdownPos({ top: rect.bottom + 4, left: rect.left })
+    }
+    setFunctionDropdownOpen(o => !o)
+  }
+
+  // Close either dropdown when clicking outside its own button+panel pair
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      const target = e.target as Node
+      if (
+        typeButtonRef.current && !typeButtonRef.current.contains(target) &&
+        typePanelRef.current && !typePanelRef.current.contains(target)
+      ) {
+        setTypeDropdownOpen(false)
+      }
+      if (
+        functionButtonRef.current && !functionButtonRef.current.contains(target) &&
+        functionPanelRef.current && !functionPanelRef.current.contains(target)
+      ) {
+        setFunctionDropdownOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [])
 
   useEffect(() => {
     const session_id = localStorage.getItem("equipment_session_id")
-    if (!session_id) { router.push("/"); return }
+    if (!session_id) { router.push("/upload"); return }
     axios.get(`http://localhost:8000/api/session/equipment/${session_id}`)
       .then(res => {
         const data = res.data.raw || []
         setRawData(data)
         setCrews([...new Set<string>(data.map((r: any) => r["Crew Code"]).filter(Boolean))].sort())
-        applyFilters(data, "", "", "", "")
+        applyFilters(data, "", "", "", new Set(), false, new Set())
       })
-      .catch(() => router.push("/"))
+      .catch(() => router.push("/upload"))
   }, [])
 
   function toggleEquip(code: string, checked: boolean) {
@@ -214,68 +313,139 @@ export default function EquipmentDashboard() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-6 ">
-        <h1 className="text-2xl font-bold">Equipment Dashboard</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-medium">Equipment Dashboard</h1>
         <div className="flex items-center gap-2">
           <button onClick={() => router.push("/map")} className="border border-gray-300 bg-white text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
             Combined Map
           </button>
-          <button onClick={() => router.push("/")} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
+          <button onClick={() => router.push("/upload")} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
             Upload new file
           </button>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="flex flex-nowrap items-end gap-2 mb-6 p-3 bg-white border border-gray-200 rounded-xl overflow-x-auto">
-        <div className="flex flex-col gap-0.5 flex-shrink-0">
-          <label className="text-[10px] text-gray-500">Start date</label>
-          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-gray-800" />
+      <div className="flex flex-nowrap items-end justify-between gap-3 mb-6 p-3 bg-white border border-gray-200 rounded-xl overflow-x-auto">
+        <div className="flex flex-col gap-1 flex-shrink-0">
+          <label className="text-xs text-gray-500">Start date</label>
+          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm text-gray-800" />
         </div>
-        <div className="flex flex-col gap-0.5 flex-shrink-0">
-          <label className="text-[10px] text-gray-500">End date</label>
-          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-gray-800" />
+        <div className="flex flex-col gap-1 flex-shrink-0">
+          <label className="text-xs text-gray-500">End date</label>
+          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm text-gray-800" />
         </div>
-        <div className="flex flex-col gap-0.5 flex-shrink-0">
-          <label className="text-[10px] text-gray-500">Crew</label>
-          <select value={crew} onChange={e => setCrew(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-gray-800 w-24">
+        <div className="flex flex-col gap-1 flex-shrink-0">
+          <label className="text-xs text-gray-500">Crew</label>
+          <select value={crew} onChange={e => setCrew(e.target.value)} className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm text-gray-800 w-28">
             <option value="">All crews</option>
             {crews.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
-        <div className="flex flex-col gap-0.5 flex-shrink-0">
-          <label className="text-[10px] text-gray-500">Equipment type</label>
-          <select value={equipType} onChange={e => setEquipType(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-gray-800 w-32">
-            <option value="">All types</option>
-            {equipTypes.map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
+        <div className="flex flex-col gap-1 flex-shrink-0">
+          <label className="text-xs text-gray-500">Equipment type</label>
+          <button
+            ref={typeButtonRef}
+            onClick={openTypeDropdown}
+            className="flex items-center justify-between gap-2 border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm text-gray-800 bg-white w-44 hover:bg-gray-50"
+          >
+            <span className="truncate">
+              {selectedTypes.size === 0 ? "All types" : `${selectedTypes.size} type${selectedTypes.size !== 1 ? "s" : ""}`}
+            </span>
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className={`flex-shrink-0 text-gray-400 transition-transform ${typeDropdownOpen ? "rotate-180" : ""}`}>
+              <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+
+          {typeDropdownOpen && typeDropdownPos && createPortal(
+            <div
+              ref={typePanelRef}
+              className="fixed w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-[60] py-1 max-h-72 overflow-y-auto"
+              style={{ top: typeDropdownPos.top, left: typeDropdownPos.left }}
+            >
+              {equipTypes.map(t => (
+                <label key={t} className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 cursor-pointer">
+                  <input type="checkbox" checked={selectedTypes.has(t)} onChange={() => toggleType(t)} className="rounded border-gray-300" />
+                  <span className="text-gray-700">{t}</span>
+                </label>
+              ))}
+            </div>,
+            document.body
+          )}
         </div>
 
-        <div className="w-px h-6 bg-gray-200 flex-shrink-0" />
+        <div className="flex flex-col gap-1 flex-shrink-0">
+          <label className="text-xs text-gray-500">&nbsp;</label>
+          <button
+            onClick={toggleOnSite}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium border transition-colors flex-shrink-0
+              ${onSiteOnly ? "bg-green-50 border-green-300 text-green-800" : "bg-white border-gray-300 text-gray-600 hover:bg-gray-50"}`}
+          >
+            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${onSiteOnly ? "bg-green-500" : "bg-gray-300"}`} />
+            On-site
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-1 flex-shrink-0">
+          <label className="text-xs text-gray-500">Function code</label>
+          <button
+            ref={functionButtonRef}
+            onClick={openFunctionDropdown}
+            className="flex items-center justify-between gap-2 border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm text-gray-800 bg-white w-44 hover:bg-gray-50"
+          >
+            <span className="truncate">
+              {selectedFunctions.size === 0 ? "All functions" : `${selectedFunctions.size} selected`}
+            </span>
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className={`flex-shrink-0 text-gray-400 transition-transform ${functionDropdownOpen ? "rotate-180" : ""}`}>
+              <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+
+          {functionDropdownOpen && functionDropdownPos && createPortal(
+            <div
+              ref={functionPanelRef}
+              className="fixed w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-[60] py-1 max-h-72 overflow-y-auto"
+              style={{ top: functionDropdownPos.top, left: functionDropdownPos.left }}
+            >
+              {functionOptions.length === 0 && (
+                <div className="px-3 py-2 text-xs text-gray-400">No function codes found</div>
+              )}
+              {functionOptions.map(f => (
+                <label key={f} className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 cursor-pointer">
+                  <input type="checkbox" checked={selectedFunctions.has(f)} onChange={() => toggleFunction(f)} className="rounded border-gray-300 flex-shrink-0" />
+                  <span className="text-gray-700 truncate">{f}</span>
+                </label>
+              ))}
+            </div>,
+            document.body
+          )}
+        </div>
+
+        <div className="w-px h-8 bg-gray-200 flex-shrink-0" />
 
         {([3, 6, 9, 12] as number[]).map(m => (
           <button
             key={m}
             onClick={() => applyQuickRange(m)}
-            className="flex-shrink-0 border border-gray-300 bg-white text-gray-700 px-2 py-1 rounded-lg text-xs hover:bg-gray-50"
+            className="flex-shrink-0 border border-gray-300 bg-white text-gray-700 px-2.5 py-1.5 rounded-lg text-sm hover:bg-gray-50"
           >
             {m}mo
           </button>
         ))}
         <button
           onClick={() => applyQuickRange("ytd")}
-          className="flex-shrink-0 border border-gray-300 bg-white text-gray-700 px-2 py-1 rounded-lg text-xs hover:bg-gray-50"
+          className="flex-shrink-0 border border-gray-300 bg-white text-gray-700 px-2.5 py-1.5 rounded-lg text-sm hover:bg-gray-50"
         >
           YTD
         </button>
 
-        <div className="w-px h-6 bg-gray-200 flex-shrink-0" />
+        <div className="w-px h-8 bg-gray-200 flex-shrink-0" />
 
-        <button onClick={() => applyFilters(rawData, startDate, endDate, crew, equipType)} className="flex-shrink-0 bg-blue-600 text-white px-3 py-1 rounded-lg text-xs hover:bg-blue-700">Apply</button>
+        <button onClick={() => applyFilters(rawData, startDate, endDate, crew, selectedTypes, onSiteOnly, selectedFunctions)} className="flex-shrink-0 bg-blue-600 text-white px-3.5 py-1.5 rounded-lg text-sm hover:bg-blue-700">Apply</button>
         <button onClick={() => {
-          setStartDate(""); setEndDate(""); setCrew(""); setEquipType("")
-            applyFilters(rawData, "", "", "", "")
-          }} className="flex-shrink-0 border border-gray-800 bg-gray-600 text-white px-3 py-1 rounded-lg text-xs hover:bg-gray-800">Reset</button>
+          setStartDate(""); setEndDate(""); setCrew(""); setSelectedTypes(new Set()); setOnSiteOnly(false); setSelectedFunctions(new Set())
+            applyFilters(rawData, "", "", "", new Set(), false, new Set())
+          }} className="flex-shrink-0 border border-gray-800 bg-gray-600 text-white px-3.5 py-1.5 rounded-lg text-sm hover:bg-gray-800">Reset</button>
       </div>
 
       {/* Metrics */}
@@ -307,12 +477,6 @@ export default function EquipmentDashboard() {
         >
           Calendar
         </button>
-        <button
-          onClick={() => setTab("map")}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === "map" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
-        >
-          Map
-        </button>
       </div>
 
       {/* Charts tab */}
@@ -335,11 +499,6 @@ export default function EquipmentDashboard() {
       {/* Calendar tab */}
       {tab === "calendar" && (
         <EquipmentCalendar allRows={allRows} active={active} focusDate={calendarFocusDate} />
-      )}
-
-      {/* Map tab */}
-      {tab === "map" && (
-        <EquipmentMap active={active} />
       )}
     </div>
   )
