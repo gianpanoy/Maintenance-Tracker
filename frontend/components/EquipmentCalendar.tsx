@@ -38,6 +38,7 @@ interface DayEntry {
   equipType: string
   miles: number
   hours: number
+  shopHours: number
   operators: Set<string>
   functions: Set<string>
   charges: Set<string>
@@ -92,6 +93,7 @@ export default function EquipmentCalendar({ active, focusDate }: Props) {
             equipType: r.equipType,
             miles: 0,
             hours: 0,
+            shopHours: 0,
             operators: new Set(),
             functions: new Set(),
             charges: new Set(),
@@ -99,11 +101,15 @@ export default function EquipmentCalendar({ active, focusDate }: Props) {
         }
         map[d][r.code].miles += Number(row["Run Miles"]) || 0
         map[d][r.code].hours += Number(row["Run Hours"]) || 0
+        const chargeCodeRaw = (row["Charge Code"] || "").trim()
+        if (chargeCodeRaw.startsWith("8")) {
+          map[d][r.code].shopHours += Number(row["Run Hours"]) || 0
+        }
         const op = (row["Remarks"] || "").trim()
         if (op) map[d][r.code].operators.add(op)
         const fn = (row["Function Description"] || "").trim()
         if (fn) map[d][r.code].functions.add(fn)
-        const chargeCode = (row["Charge Code"] || "").trim()
+        const chargeCode = chargeCodeRaw
         const chargeDesc = (row["Charge Description"] || "").trim()
         if (chargeCode || chargeDesc) {
           map[d][r.code].charges.add([chargeCode, chargeDesc].filter(Boolean).join(" — "))
@@ -333,16 +339,22 @@ export default function EquipmentCalendar({ active, focusDate }: Props) {
 
                 {hasData && (
                   <div className="mt-1 flex-1 min-h-0 flex flex-col gap-1 overflow-y-auto">
-                    {dayEntries.map(e => (
-                      <div
-                        key={e.code}
-                        title={`${e.code} — ${e.desc}`}
-                        className="flex items-center gap-1.5 text-xs text-gray-700 leading-tight"
-                      >
-                        <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ backgroundColor: typeColor(e.equipType) }} />
-                        <span className="truncate">{e.code} {e.desc}</span>
-                      </div>
-                    ))}
+                    {dayEntries.map(e => {
+                      const isShop = e.shopHours > 0 && e.shopHours >= e.hours - e.shopHours
+                      return (
+                        <div
+                          key={e.code}
+                          title={`${e.code} — ${e.desc}${isShop ? " (shop/admin)" : ""}`}
+                          className={`flex items-center gap-1.5 text-xs leading-tight ${isShop ? "text-gray-400 italic" : "text-gray-700"}`}
+                        >
+                          <span
+                            className="w-2 h-2 rounded-sm flex-shrink-0"
+                            style={{ backgroundColor: isShop ? "#D97706" : typeColor(e.equipType) }}
+                          />
+                          <span className="truncate">{e.code} {e.desc}</span>
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </button>
@@ -379,12 +391,22 @@ export default function EquipmentCalendar({ active, focusDate }: Props) {
             </div>
 
             <div className="flex-1 overflow-y-auto divide-y divide-gray-100">
-              {selectedEntries.map(e => (
+              {selectedEntries.map(e => {
+                const isShop = e.shopHours > 0 && e.shopHours >= e.hours - e.shopHours
+                return (
                 <div key={e.code} className="px-4 py-3">
                   <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ backgroundColor: typeColor(e.equipType) }} />
+                    <span
+                      className="w-2 h-2 rounded-sm flex-shrink-0"
+                      style={{ backgroundColor: isShop ? "#D97706" : typeColor(e.equipType) }}
+                    />
                     <span className="text-xs font-semibold text-gray-900">{e.code}</span>
                     <span className="text-xs text-gray-400 truncate">{e.desc}</span>
+                    {isShop && (
+                      <span className="text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 flex-shrink-0">
+                        Shop/Admin
+                      </span>
+                    )}
                   </div>
                   <div className="mt-1 flex items-center gap-2 text-xs">
                     {e.miles > 0 && <span className="text-blue-600 font-medium">{e.miles.toFixed(0)} mi</span>}
@@ -400,7 +422,8 @@ export default function EquipmentCalendar({ active, focusDate }: Props) {
                     <div className="text-xs text-gray-400">{[...e.functions].join(", ")}</div>
                   )}
                 </div>
-              ))}
+                )
+              })}
               {selectedEntries.length === 0 && (
                 <div className="px-4 py-8 text-center text-sm text-gray-400">No activity this day</div>
               )}

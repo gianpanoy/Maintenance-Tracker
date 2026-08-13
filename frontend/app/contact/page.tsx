@@ -25,7 +25,7 @@ export default function ContactPage() {
         <div className="bg-white border border-gray-200 rounded-xl p-6">
           <h2 className="text-sm font-semibold text-gray-900 mb-3">About Me</h2>
           <p className="text-sm text-gray-700 leading-relaxed">
-            This was a Summer Intern project created by me. Mahalo to Eric, Randall, Joel
+            This was an Intern project created in the Summer 2026 by Gian Panoy. Mahalo to Eric, Randall, Joel
             for this project and also my time here at Highways Kauai.
           </p>
 
