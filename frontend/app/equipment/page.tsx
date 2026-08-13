@@ -314,7 +314,7 @@ export default function EquipmentDashboard() {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-medium">Equipment Dashboard</h1>
+        <h1 className="text-2xl font-bold">Equipment Dashboard</h1>
         <div className="flex items-center gap-2">
           <button onClick={() => router.push("/map")} className="border border-gray-300 bg-white text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
             Combined Map
