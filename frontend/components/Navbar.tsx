@@ -9,9 +9,10 @@ export default function Navbar() {
   const pathname = usePathname(); // Tracks current route to highlight active link
 
   const navLinks = [
-    { name: "Home", href: "/" },
-    { name: "Employees", href: "/dashboard" },
+    { name: "Upload", href: "/" },
+    { name: "Employees", href: "/employee" },
     { name: "Equipment", href: "/equipment" },
+    {name: "Map", href: "/map"},
     { name: "Contact", href: "/contact" },
   ];
 

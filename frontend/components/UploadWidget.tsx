@@ -34,7 +34,7 @@ export default function UploadWidget() {
 
       if (reportType === "employee") {
         localStorage.setItem("session_id", session_id)
-        window.location.href = "/dashboard"
+        window.location.href = "/employee"
       } else {
         localStorage.setItem("equipment_session_id", session_id)
         window.location.href = "/equipment"
