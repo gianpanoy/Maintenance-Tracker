@@ -113,6 +113,28 @@ export default function EquipmentCalendar({ active, focusDate }: Props) {
     return map
   }, [active, year, month])
 
+  // Metrics for JUST the currently displayed month — the dashboard's top
+  // metric cards reflect whatever date range is filtered up top, which can
+  // span many months; these are scoped to this one calendar view instead.
+  const monthStats = useMemo(() => {
+    let miles = 0
+    let hours = 0
+    const vehicleCodes = new Set<string>()
+    Object.values(usageByDay).forEach(dayMap => {
+      Object.values(dayMap).forEach(entry => {
+        miles += entry.miles
+        hours += entry.hours
+        vehicleCodes.add(entry.code)
+      })
+    })
+    return {
+      vehicles: vehicleCodes.size,
+      miles,
+      hours,
+      activeDays: Object.keys(usageByDay).length,
+    }
+  }, [usageByDay])
+
   const monthName = new Date(year, month, 1).toLocaleString("default", { month: "long" })
   const daysInMonth = getDaysInMonth(year, month)
   const firstDow = new Date(year, month, 1).getDay()
@@ -248,6 +270,21 @@ export default function EquipmentCalendar({ active, focusDate }: Props) {
         </div>
       </div>
 
+      {/* Metrics for this specific month */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        {[
+          ["Vehicles active", monthStats.vehicles],
+          [`${monthName} miles`, monthStats.miles.toFixed(0)],
+          [`${monthName} hours`, monthStats.hours.toFixed(1)],
+          ["Active days", monthStats.activeDays],
+        ].map(([l, v]) => (
+          <div key={String(l)} className="bg-gray-50 rounded-xl p-4">
+            <div className="text-xs text-gray-600 mb-1">{l}</div>
+            <div className="text-2xl font-medium text-gray-900">{v}</div>
+          </div>
+        ))}
+      </div>
+
       {/* Calendar grid */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         {/* Weekday header */}
@@ -306,7 +343,7 @@ export default function EquipmentCalendar({ active, focusDate }: Props) {
                         className="flex items-center gap-1 text-[10px] text-gray-700 leading-tight"
                       >
                         <span className="w-1.5 h-1.5 rounded-sm flex-shrink-0" style={{ backgroundColor: typeColor(e.equipType) }} />
-                        <span className="truncate">{e.desc || e.code}</span>
+                        <span className="truncate">{e.code} {e.desc}</span>
                       </div>
                     ))}
                     {overflowCount > 0 && (
